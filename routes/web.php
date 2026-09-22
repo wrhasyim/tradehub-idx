@@ -1,7 +1,7 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\DashboardController; // <- Baris ini yang paling penting
+use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\SubscriptionController;
@@ -11,24 +11,25 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-// Rute Khusus Admin
-Route::middleware(['auth', 'admin'])->prefix('admin')->group(function () {
-    Route::get('/', [AdminController::class, 'index'])->name('admin.index');
-    Route::post('/store', [AdminController::class, 'store'])->name('admin.store');
-    Route::delete('/destroy/{id}', [AdminController::class, 'destroy'])->name('admin.destroy');
+// Rute Khusus Admin (Command Center)
+Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('/', [AdminController::class, 'index'])->name('index');
+    Route::patch('/user/{user}/vip', [AdminController::class, 'toggleVip'])->name('user.vip');
 });
 
-// Rute Dashboard menggunakan Controller yang baru kita buat
+// Rute Dashboard menggunakan Controller
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware(['auth', 'verified'])
     ->name('dashboard');
 
-// Rute Bawaan Laravel Breeze
+// Rute Bawaan & Fitur Utama
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-Route::post('/upgrade/process', [SubscriptionController::class, 'process'])->name('upgrade.process');
+    
+    Route::post('/upgrade/process', [SubscriptionController::class, 'process'])->name('upgrade.process');
+
     // Trading Journal Routes
     Route::get('/journal', [JournalController::class, 'index'])->name('journal.index');
     Route::post('/journal', [JournalController::class, 'store'])->name('journal.store');

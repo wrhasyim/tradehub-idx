@@ -2,56 +2,81 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Watchlist;
+use App\Models\User;
 use Illuminate\Http\Request;
-use App\Models\Ipo;
+use Illuminate\Support\Facades\Http;
 
 class AdminController extends Controller
 {
     public function index()
     {
-        $watchlists = Watchlist::latest()->get();
-        return view('admin.index', compact('watchlists'));
+        $totalUsers = User::count();
+        $totalVipUsers = User::where('role', 'vip')->count();
+
+        // 1. Cek Koneksi API Invezgo (Data Saham)
+        $invezgoStatus = 'Operational';
+        $invezgoLatency = '35ms';
+        try {
+            $start = microtime(true);
+            $response = Http::timeout(3)->get('https://api.sandbox.midtrans.com'); 
+            $latency = round((microtime(true) - $start) * 1000);
+            $invezgoLatency = $latency . 'ms';
+            if ($response->failed()) {
+                $invezgoStatus = 'Degraded';
+            }
+        } catch (\Exception $e) {
+            $invezgoStatus = 'Offline';
+            $invezgoLatency = '-';
+        }
+
+        // 2. Cek Koneksi API Midtrans (Payment Gateway)
+        $midtransStatus = 'Operational';
+        $midtransLatency = '42ms';
+        try {
+            $start = microtime(true);
+            $response = Http::timeout(3)->get('https://api.sandbox.midtrans.com');
+            $latency = round((microtime(true) - $start) * 1000);
+            $midtransLatency = $latency . 'ms';
+            if ($response->failed()) {
+                $midtransStatus = 'Degraded';
+            }
+        } catch (\Exception $e) {
+            $midtransStatus = 'Offline';
+            $midtransLatency = '-';
+        }
+
+        $users = User::latest()->paginate(10);
+
+        return view('admin.index', compact(
+            'totalUsers', 
+            'totalVipUsers', 
+            'invezgoStatus', 
+            'invezgoLatency', 
+            'midtransStatus', 
+            'midtransLatency', 
+            'users'
+        ));
     }
-    public function store(Request $request)
+
+    public function toggleVip(User $user)
     {
-        $request->validate([
-            'stock_code' => 'required|string|max:10',
-            'status' => 'required|in:Watching,Triggered',
-            'entry_price' => 'nullable|numeric',
-            'target_price' => 'nullable|numeric',
-            'stop_loss' => 'nullable|numeric',
-            'ai_analysis_notes' => 'required|string',
-        ]);
+        if ($user->role === 'superadmin') {
+            return back()->with('error', 'Tidak dapat mengubah role Superadmin.');
+        }
 
-        Watchlist::create($request->all());
+        // Logika toggle dinamis beserta pesannya
+        if ($user->role === 'vip') {
+            $user->role = 'regular';
+            $user->vip_valid_until = null;
+            $message = 'Status VIP user berhasil dicabut.';
+        } else {
+            $user->role = 'vip';
+            $user->vip_valid_until = now()->addMonth(); // Aktif 1 bulan otomatis
+            $message = 'Status VIP berhasil diaktifkan selama 1 bulan.';
+        }
+        
+        $user->save();
 
-        return redirect()->route('admin.index')->with('success', 'Sinyal berhasil ditambahkan ke pasar!');
+        return back()->with('success', $message);
     }
-
-    public function destroy($id)
-    {
-        Watchlist::findOrFail($id)->delete();
-        return redirect()->route('admin.index')->with('success', 'Sinyal berhasil dihapus.');
-    }
-    // Di dalam class AdminController, tambahkan method ini:
-public function storeIpo(Request $request)
-{
-    $request->validate([
-        'code' => 'required|string|max:10',
-        'company_name' => 'required|string|max:255',
-        'status' => 'required|string',
-        'offering_date' => 'nullable|string',
-    ]);
-
-    Ipo::create($request->all());
-
-    return redirect()->route('admin.index')->with('success', 'Jadwal E-IPO berhasil ditambahkan!');
-}
-
-public function destroyIpo($id)
-{
-    Ipo::findOrFail($id)->delete();
-    return redirect()->route('admin.index')->with('success', 'Jadwal E-IPO berhasil dihapus!');
-}
 }

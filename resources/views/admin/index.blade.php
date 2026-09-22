@@ -1,122 +1,123 @@
 <x-app-layout>
-    <div x-data="{ showAddModal: false }" class="py-8 bg-gray-50 min-h-screen">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
+    <div class="py-10 bg-zinc-950 min-h-screen text-gray-100">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
             
-            <!-- Alert Sukses -->
+            <!-- Alert Notifikasi -->
             @if(session('success'))
-            <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative">
+            <div class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-4 py-3 rounded-xl text-sm">
                 {{ session('success') }}
             </div>
             @endif
+            @if(session('error'))
+            <div class="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-sm">
+                {{ session('error') }}
+            </div>
+            @endif
 
-            <!-- Panel Manajemen Data -->
-            <div class="bg-white p-6 shadow sm:rounded-lg border-t-4 border-[#ff9900]">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-xl font-bold text-gray-900">Manajemen Watchlist & Sinyal</h3>
-                    <button @click="showAddModal = true" class="bg-[#ff9900] text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-orange-500 shadow-md">
-                        + Tambah Sinyal Manual
-                    </button>
+            <!-- Grid 3 Kartu Utama (Total User, API Invezgo, API Midtrans) -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- 1. Total Users -->
+                <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
+                    <p class="text-xs font-bold uppercase tracking-wider text-zinc-500">Total Pengguna</p>
+                    <h3 class="text-3xl font-black text-white mt-2">{{ $totalUsers }}</h3>
+                    <p class="text-xs text-[#ff9900] mt-1 font-semibold">{{ $totalVipUsers }} Active VIP Members</p>
+                </div>
+
+                <!-- 2. Status API Invezgo (Data Saham) -->
+                <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
+                    <p class="text-xs font-bold uppercase tracking-wider text-zinc-500">API Invezgo (Data Saham)</p>
+                    <div class="flex items-center gap-2 mt-2">
+                        <h3 class="text-xl font-black {{ $invezgoStatus === 'Operational' ? 'text-emerald-400' : 'text-amber-400' }}">{{ $invezgoStatus }}</h3>
+                    </div>
+                    <p class="text-xs text-zinc-400 mt-1">Latency: <span class="text-white font-mono">{{ $invezgoLatency }}</span></p>
+                </div>
+
+                <!-- 3. Status API Midtrans (Payment Gateway) -->
+                <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
+                    <p class="text-xs font-bold uppercase tracking-wider text-zinc-500">API Midtrans (Payment Gateway)</p>
+                    <div class="flex items-center gap-2 mt-2">
+                        <h3 class="text-xl font-black {{ $midtransStatus === 'Operational' ? 'text-emerald-400' : 'text-amber-400' }}">{{ $midtransStatus }}</h3>
+                    </div>
+                    <p class="text-xs text-zinc-400 mt-1">Latency: <span class="text-white font-mono">{{ $midtransLatency }}</span></p>
+                </div>
+            </div>
+
+            <!-- Grid Tabel: User Governance & Access Control -->
+            <div class="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl overflow-hidden">
+                <div class="px-6 py-5 border-b border-zinc-800 flex items-center justify-between">
+                    <div>
+                        <h3 class="text-lg font-bold text-white">User Governance & Access Control</h3>
+                        <p class="text-xs text-zinc-400">Kelola tingkat keanggotaan VIP member (masa aktif otomatis 1 bulan) dan hak akses platform.</p>
+                    </div>
                 </div>
 
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
-                            <tr class="border-b bg-gray-50 text-sm">
-                                <th class="p-3">Saham</th>
-                                <th class="p-3">Status</th>
-                                <th class="p-3">Plan (Entry/TP/SL)</th>
-                                <th class="p-3">Catatan Analisis</th>
-                                <th class="p-3 text-right">Aksi</th>
+                            <tr class="bg-zinc-950/50 text-zinc-400 text-xs uppercase tracking-wider border-b border-zinc-800">
+                                <th class="px-6 py-4 font-bold">Nama & Email</th>
+                                <th class="px-6 py-4 font-bold">Role</th>
+                                <th class="px-6 py-4 font-bold">Status VIP</th>
+                                <th class="px-6 py-4 font-bold">Masa Berlaku VIP (1 Bulan)</th>
+                                <th class="px-6 py-4 font-bold text-right">Aksi Kontrol</th>
                             </tr>
                         </thead>
-                        <tbody class="text-sm">
-                            @foreach($watchlists as $item)
-                            <tr class="border-b hover:bg-gray-50 transition-colors">
-                                <td class="p-3 font-bold text-gray-900">{{ $item->stock_code }}</td>
-                                <td class="p-3">
-                                    <span class="px-2 py-1 {{ strtolower($item->status) === 'triggered' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700' }} rounded-full text-xs font-bold">
-                                        {{ strtoupper($item->status) }}
+                        <tbody class="divide-y divide-zinc-800 text-sm">
+                            @foreach($users as $u)
+                            <tr class="hover:bg-zinc-800/50 transition-colors">
+                                <td class="px-6 py-4">
+                                    <div class="font-bold text-white">{{ $u->name }}</div>
+                                    <div class="text-xs text-zinc-500">{{ $u->email }}</div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <span class="px-2.5 py-1 rounded-md text-xs font-bold {{ $u->role === 'superadmin' ? 'bg-[#ff9900]/20 text-[#ff9900]' : 'bg-zinc-800 text-zinc-300' }}">
+                                        {{ strtoupper($u->role) }}
                                     </span>
                                 </td>
-                                <td class="p-3 text-gray-600">
-                                    {{ $item->entry_price ?? '-' }} / {{ $item->target_price ?? '-' }} / {{ $item->stop_loss ?? '-' }}
+                                <td class="px-6 py-4">
+                                    @if($u->role === 'vip')
+                                        <span class="px-2.5 py-1 rounded-md text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">VIP MEMBER</span>
+                                    @elseif($u->role === 'superadmin')
+                                        <span class="px-2.5 py-1 rounded-md text-xs font-bold bg-[#ff9900]/20 text-[#ff9900]">SUPERADMIN</span>
+                                    @else
+                                        <span class="px-2.5 py-1 rounded-md text-xs font-bold bg-zinc-800 text-zinc-500">FREE</span>
+                                    @endif
                                 </td>
-                                <td class="p-3 italic text-gray-500">{{ Str::limit($item->ai_analysis_notes, 50) }}</td>
-                                <td class="p-3 text-right">
-                                    <form action="{{ route('admin.destroy', $item->id) }}" method="POST" class="inline-block" onsubmit="return confirm('Yakin ingin menghapus sinyal ini?');">
+                                <td class="px-6 py-4 text-xs font-mono text-zinc-300">
+                                    @if($u->vip_valid_until)
+                                        {{ \Carbon\Carbon::parse($u->vip_valid_until)->format('d M Y, H:i') }}
+                                        @if(now()->lt($u->vip_valid_until))
+                                            <span class="block text-[10px] text-emerald-400 font-sans mt-0.5">Aktif</span>
+                                        @else
+                                            <span class="block text-[10px] text-red-400 font-sans mt-0.5">Kadaluarsa</span>
+                                        @endif
+                                    @else
+                                        <span class="text-zinc-600">-</span>
+                                    @endif
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    @if($u->role !== 'superadmin')
+                                    <form action="{{ route('admin.user.vip', $u->id) }}" method="POST" class="inline">
                                         @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="text-red-600 hover:text-red-800 font-bold hover:underline">Hapus</button>
+                                        @method('PATCH')
+                                        <button type="submit" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-amber-400 transition-colors border border-zinc-700">
+                                            {{ $u->role === 'vip' ? 'Revoke VIP' : 'Upgrade to VIP (1 Mo)' }}
+                                        </button>
                                     </form>
+                                    @else
+                                    <span class="text-xs text-zinc-600 italic">Protected</span>
+                                    @endif
                                 </td>
                             </tr>
                             @endforeach
                         </tbody>
                     </table>
                 </div>
-            </div>
-        </div>
-
-        <!-- POPUP MODAL TAMBAH DATA -->
-        <div x-show="showAddModal" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto">
-            <div x-show="showAddModal" x-transition.opacity class="fixed inset-0 bg-black bg-opacity-75 transition-opacity"></div>
-
-            <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:p-0">
-                <div x-show="showAddModal" 
-                     x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95" x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100" 
-                     x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100" x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95" 
-                     @click.away="showAddModal = false"
-                     class="inline-block align-bottom bg-zinc-900 rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg w-full border border-zinc-700">
-                    
-                    <div class="px-6 py-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
-                        <h3 class="text-lg font-bold text-white">Buat Sinyal Baru</h3>
-                        <button @click="showAddModal = false" class="text-gray-400 hover:text-white">&times;</button>
-                    </div>
-
-                    <form action="{{ route('admin.store') }}" method="POST" class="p-6">
-                        @csrf
-                        <div class="grid grid-cols-2 gap-4 mb-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-1">Kode Saham</label>
-                                <input type="text" name="stock_code" placeholder="Misal: BBCA" required class="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg focus:ring-[#ff9900] focus:border-[#ff9900] uppercase">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-1">Status</label>
-                                <select name="status" class="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg focus:ring-[#ff9900] focus:border-[#ff9900]">
-                                    <option value="Watching">Watching</option>
-                                    <option value="Triggered">Triggered</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-3 gap-4 mb-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-1">Entry Price</label>
-                                <input type="number" step="0.01" name="entry_price" class="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg focus:ring-[#ff9900] focus:border-[#ff9900]">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-1">Target Price</label>
-                                <input type="number" step="0.01" name="target_price" class="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg focus:ring-[#ff9900] focus:border-[#ff9900]">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-1">Stop Loss</label>
-                                <input type="number" step="0.01" name="stop_loss" class="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg focus:ring-[#ff9900] focus:border-[#ff9900]">
-                            </div>
-                        </div>
-
-                        <div class="mb-6">
-                            <label class="block text-sm font-medium text-gray-400 mb-1">Catatan Analisis (AI Notes)</label>
-                            <textarea name="ai_analysis_notes" rows="3" required placeholder="Masukkan narasi analisis..." class="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg focus:ring-[#ff9900] focus:border-[#ff9900]"></textarea>
-                        </div>
-
-                        <div class="flex justify-end gap-3">
-                            <button type="button" @click="showAddModal = false" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg font-bold">Batal</button>
-                            <button type="submit" class="px-4 py-2 bg-[#ff9900] hover:bg-orange-500 text-black rounded-lg font-bold">Terbitkan Sinyal</button>
-                        </div>
-                    </form>
+                <div class="p-4 border-t border-zinc-800">
+                    {{ $users->links() }}
                 </div>
             </div>
-        </div>
 
+        </div>
     </div>
 </x-app-layout>
