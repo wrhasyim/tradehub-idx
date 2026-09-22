@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Daftarkan alias untuk middleware VIP kita
         $middleware->alias([
             'vip' => \App\Http\Middleware\CheckVipAccess::class,
+            'admin' => \App\Http\Middleware\IsAdmin::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

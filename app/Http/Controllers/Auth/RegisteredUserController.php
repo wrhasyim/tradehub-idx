@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Illuminate\Support\Str;
 
 class RegisteredUserController extends Controller
 {
@@ -40,6 +41,8 @@ class RegisteredUserController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
+            'tradehub_id' => 'TH-' . strtoupper(Str::random(5)), 
+            'role' => 'regular', // <-- Ubah kata 'user' menjadi 'regular' di sini
         ]);
 
         event(new Registered($user));
