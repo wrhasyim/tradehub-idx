@@ -5,6 +5,7 @@ use App\Http\Controllers\DashboardController; // <- Baris ini yang paling pentin
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\SubscriptionController;
+use App\Http\Controllers\JournalController;
 
 Route::get('/', function () {
     return view('welcome');
@@ -28,6 +29,10 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 Route::post('/upgrade/process', [SubscriptionController::class, 'process'])->name('upgrade.process');
-    });
+    // Trading Journal Routes
+    Route::get('/journal', [JournalController::class, 'index'])->name('journal.index');
+    Route::post('/journal', [JournalController::class, 'store'])->name('journal.store');
+    Route::delete('/journal/{journal}', [JournalController::class, 'destroy'])->name('journal.destroy');
+});
 
 require __DIR__.'/auth.php';

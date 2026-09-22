@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Watchlist;
 use Illuminate\Http\Request;
+use App\Models\Ipo;
 
 class AdminController extends Controller
 {
@@ -33,4 +34,24 @@ class AdminController extends Controller
         Watchlist::findOrFail($id)->delete();
         return redirect()->route('admin.index')->with('success', 'Sinyal berhasil dihapus.');
     }
+    // Di dalam class AdminController, tambahkan method ini:
+public function storeIpo(Request $request)
+{
+    $request->validate([
+        'code' => 'required|string|max:10',
+        'company_name' => 'required|string|max:255',
+        'status' => 'required|string',
+        'offering_date' => 'nullable|string',
+    ]);
+
+    Ipo::create($request->all());
+
+    return redirect()->route('admin.index')->with('success', 'Jadwal E-IPO berhasil ditambahkan!');
+}
+
+public function destroyIpo($id)
+{
+    Ipo::findOrFail($id)->delete();
+    return redirect()->route('admin.index')->with('success', 'Jadwal E-IPO berhasil dihapus!');
+}
 }

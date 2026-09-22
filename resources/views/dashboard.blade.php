@@ -116,17 +116,29 @@
                         @endif
                     </div>
 
-                    <!-- Panel Bawah: Listed Company Disclosure -->
+                    <!-- Panel Bawah: Listed Company Disclosure & E-IPO (KINI DINAMIS) -->
                     <div class="bg-zinc-900 rounded-2xl p-6 border border-zinc-800 shadow-xl">
                         <h3 class="font-bold text-gray-200 text-lg mb-6 flex items-center gap-2">
                             <svg class="w-5 h-5 text-[#ff9900]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg>
                             Listed Company Disclosure & E-IPO
                         </h3>
+                        
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="border-l-4 border-[#ff9900] pl-4">
-                                <span class="text-xs font-bold text-[#ff9900] bg-orange-900/30 border border-orange-700/30 px-2 py-1 rounded">UPCOMING IPO</span>
-                                <h4 class="font-bold text-gray-300 mt-2">PT Global Sukses Makmur Tbk (GSM)</h4>
+                            @forelse($ipos ?? [] as $ipo)
+                            <div class="border-l-4 border-[#ff9900] pl-4 py-1 bg-zinc-950/40 rounded-r-xl p-3 border-y border-r border-zinc-800/60">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-xs font-bold text-[#ff9900] bg-orange-900/30 border border-orange-700/30 px-2 py-0.5 rounded">{{ $ipo->status }}</span>
+                                    @if($ipo->offering_date)
+                                    <span class="text-xs text-gray-400 font-mono">{{ $ipo->offering_date }}</span>
+                                    @endif
+                                </div>
+                                <h4 class="font-bold text-gray-200 mt-1">{{ $ipo->company_name }} ({{ $ipo->code }})</h4>
                             </div>
+                            @empty
+                            <div class="col-span-full">
+                                <p class="text-gray-500 italic text-sm">Belum ada jadwal E-IPO aktif yang dirilis oleh Command Center.</p>
+                            </div>
+                            @endforelse
                         </div>
                     </div>
                 </div>
