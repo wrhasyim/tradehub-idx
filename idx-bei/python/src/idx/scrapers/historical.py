@@ -137,10 +137,30 @@ def _backfill_dataset(dataset, endpoint, start_date, end_date, client=None):
 
         records = data.get("data") if isinstance(data, dict) else None
         if isinstance(records, list) and len(records) > 0:
-            ts.write_partition(dataset, date_str, records)
-            fetched += 1
-            total += len(records)
-            log.info("[%d/%d] %s: %d records", i + 1, len(dates), date_str, len(records))
+            # === FILTER VALIDASI DATA BARU ===
+            valid_records = []
+            for r in records:
+                try:
+                    op = float(r.get("open", 0))
+                    hi = float(r.get("high", 0))
+                    lo = float(r.get("low", 0))
+                    cl = float(r.get("close", 0))
+                    
+                    # Buang data anomali (harga <= 0 atau High lebih kecil dari Low)
+                    if op > 0 and cl > 0 and hi >= lo:
+                        valid_records.append(r)
+                except (ValueError, TypeError):
+                    continue
+            
+            if valid_records:
+                ts.write_partition(dataset, date_str, valid_records)
+                fetched += 1
+                total += len(valid_records)
+                log.info("[%d/%d] %s: %d records (valid)", i + 1, len(dates), date_str, len(valid_records))
+            else:
+                skipped += 1
+                log.warning("[%d/%d] %s: semua record diabaikan karena anomali data!", i + 1, len(dates), date_str)
+            # =================================
         else:
             skipped += 1
             log.debug("[%d/%d] %s: no data (holiday?)", i + 1, len(dates), date_str)
@@ -239,11 +259,31 @@ async def async_backfill_dataset(
 
             records = data.get("data") if isinstance(data, dict) else None
             if isinstance(records, list) and len(records) > 0:
-                ts.write_partition(dataset, date_str, records)
-                async with lock:
-                    fetched += 1
-                    total_records += len(records)
-                log.info("[%d/%d] %s: %d records", idx, total_tasks, date_str, len(records))
+                # === FILTER VALIDASI DATA BARU (ASYNC) ===
+                valid_records = []
+                for r in records:
+                    try:
+                        op = float(r.get("open", 0))
+                        hi = float(r.get("high", 0))
+                        lo = float(r.get("low", 0))
+                        cl = float(r.get("close", 0))
+                        
+                        if op > 0 and cl > 0 and hi >= lo:
+                            valid_records.append(r)
+                    except (ValueError, TypeError):
+                        continue
+                
+                if valid_records:
+                    ts.write_partition(dataset, date_str, valid_records)
+                    async with lock:
+                        fetched += 1
+                        total_records += len(valid_records)
+                    log.info("[%d/%d] %s: %d records (valid)", idx, total_tasks, date_str, len(valid_records))
+                else:
+                    async with lock:
+                        skipped += 1
+                    log.warning("[%d/%d] %s: semua record diabaikan karena anomali data!", idx, total_tasks, date_str)
+                # ========================================
             else:
                 async with lock:
                     skipped += 1

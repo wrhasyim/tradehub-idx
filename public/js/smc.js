@@ -1,269 +1,306 @@
 /**
  * ============================================================================
- * SMC PRO - ULTIMATE INSTITUTIONAL SUITE (Fixed HH, HL, LH, LL Markers)
+ * SMC PRO - INSTITUTIONAL SUITE (With Volatility & S&R Clustering Filters)
  * ============================================================================
  */
 
 let currentSmcPlugin = null;
 
-function applySmartMoneyConcepts(data, chart, series) {
-    if (data.length < 20) return;
-
-    if (currentSmcPlugin && typeof series.detachPrimitive === 'function') {
-        try { series.detachPrimitive(currentSmcPlugin); } catch(e) {}
-    }
-    series.setMarkers([]);
-
+function calculateMarketStructureAndMarkers(data) {
     let markers = [];
-    let fvgs = [];
-    let obs = [];
-    let swings = [];
-    let structureLines = []; 
+    if (data.length < 20) return markers;
 
-    let swingLength = 3;
-    for (let i = swingLength; i < data.length - swingLength; i++) {
+    let swings = [];
+    for (let i = 3; i < data.length - 3; i++) {
+        let curr = data[i];
+        // Filter Volatilitas: Abaikan candle yang flat / tidak punya rentang harga (High == Low)
+        if (curr.high === curr.low) continue;
+
         let isHigh = true, isLow = true;
-        for (let j = 1; j <= swingLength; j++) {
-            if (data[i - j].high >= data[i].high || data[i + j].high >= data[i].high) isHigh = false;
-            if (data[i - j].low <= data[i].low || data[i + j].low <= data[i].low) isLow = false;
+        for (let j = 1; j <= 3; j++) {
+            if (data[i - j].high >= curr.high || data[i + j].high >= curr.high) isHigh = false;
+            if (data[i - j].low <= curr.low || data[i + j].low <= curr.low) isLow = false;
         }
-        if (isHigh) swings.push({ time: data[i].time, price: data[i].high, type: 'high', index: i });
-        if (isLow) swings.push({ time: data[i].time, price: data[i].low, type: 'low', index: i });
+        if (isHigh) swings.push({ time: curr.time, price: curr.high, type: 'high', close: curr.close });
+        if (isLow) swings.push({ time: curr.time, price: curr.low, type: 'low', close: curr.close });
     }
 
-    // LOGIKA STRUKTUR PASAR (HH, HL, LH, LL)
-    let trend = 0; 
-    let lastHigh = null, lastLow = null;
+    let lastHigh = null;
+    let lastLow = null;
 
     swings.forEach(sw => {
         if (sw.type === 'high') {
             if (lastHigh) {
                 if (sw.price > lastHigh.price) {
-                    let isChoch = trend === -1;
-                    if (isChoch) trend = 1;
-                    structureLines.push({ type: isChoch ? 'CHoCH' : 'BOS', price: lastHigh.price, startTime: lastHigh.time, endTime: sw.time, isBullish: true });
-                    // Tambahkan label HH (Higher High)
-                    markers.push({ time: sw.time, position: 'aboveBar', color: '#22c55e', shape: 'arrowDown', text: 'HH' });
+                    markers.push({ time: sw.time, position: 'aboveBar', color: '#10b981', shape: 'arrowDown', text: 'HH' });
                 } else {
-                    // Tambahkan label LH (Lower High)
                     markers.push({ time: sw.time, position: 'aboveBar', color: '#ef4444', shape: 'arrowDown', text: 'LH' });
                 }
+            } else {
+                markers.push({ time: sw.time, position: 'aboveBar', color: '#94a3b8', shape: 'arrowDown', text: 'H' });
             }
             lastHigh = sw;
         } else if (sw.type === 'low') {
             if (lastLow) {
-                if (sw.price < lastLow.price) {
-                    let isChoch = trend === 1;
-                    if (isChoch) trend = -1;
-                    structureLines.push({ type: isChoch ? 'CHoCH' : 'BOS', price: lastLow.price, startTime: lastLow.time, endTime: sw.time, isBullish: false });
-                    // Tambahkan label LL (Lower Low)
-                    markers.push({ time: sw.time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: 'LL' });
+                if (sw.price > lastLow.price) {
+                    markers.push({ time: sw.time, position: 'belowBar', color: '#10b981', shape: 'arrowUp', text: 'HL' });
                 } else {
-                    // Tambahkan label HL (Higher Low)
-                    markers.push({ time: sw.time, position: 'belowBar', color: '#22c55e', shape: 'arrowUp', text: 'HL' });
+                    markers.push({ time: sw.time, position: 'belowBar', color: '#f59e0b', shape: 'arrowUp', text: 'LL' });
                 }
+            } else {
+                markers.push({ time: sw.time, position: 'belowBar', color: '#94a3b8', shape: 'arrowUp', text: 'L' });
             }
             lastLow = sw;
         }
     });
 
-    series.setMarkers(markers);
+    return markers;
+}
 
-    // DETEKSI ORDER BLOCK & FVG 
-    for (let i = 2; i < data.length; i++) {
-        let c1 = data[i - 2], c2 = data[i - 1], c3 = data[i];
-        let bodySize = Math.abs(c2.close - c2.open);
-        let totalSize = c2.high - c2.low;
-        let isImbalance = bodySize > (totalSize * 0.6); 
+function clearSmcZones(series) {
+    if (currentSmcPlugin && series && typeof series.detachPrimitive === 'function') {
+        try { series.detachPrimitive(currentSmcPlugin); } catch(e) {}
+        currentSmcPlugin = null;
+    }
+}
 
-        if (c3.low > c1.high && isImbalance) {
-            fvgs.push({ type: 'bull', time: c1.time, top: c3.low, bottom: c1.high, active: true });
-            for (let j = i - 2; j >= Math.max(0, i - 10); j--) {
-                if (data[j].close < data[j].open) { 
-                    obs.push({ type: 'bull', time: data[j].time, top: data[j].high, bottom: data[j].low, active: true });
-                    break;
-                }
-            }
+function drawSmartMoneyZones(data, chart, series) {
+    clearSmcZones(series);
+    if (data.length < 20) return;
+
+    let boxes = [];
+    let zigzagPoints = [];
+    let structLines = [];
+    let srLines = [];
+    const lastTime = data[data.length - 1].time;
+
+    let swings = [];
+    for (let i = 3; i < data.length - 3; i++) {
+        let curr = data[i];
+        if (curr.high === curr.low) continue; // Abaikan candle flat
+
+        let isHigh = true, isLow = true;
+        for (let j = 1; j <= 3; j++) {
+            if (data[i - j].high >= curr.high || data[i + j].high >= curr.high) isHigh = false;
+            if (data[i - j].low <= curr.low || data[i + j].low <= curr.low) isLow = false;
         }
-        else if (c3.high < c1.low && isImbalance) {
-            fvgs.push({ type: 'bear', time: c1.time, top: c1.low, bottom: c3.high, active: true });
-            for (let j = i - 2; j >= Math.max(0, i - 10); j--) {
-                if (data[j].close > data[j].open) { 
-                    obs.push({ type: 'bear', time: data[j].time, top: data[j].high, bottom: data[j].low, active: true });
-                    break;
-                }
-            }
-        }
-
-        fvgs.forEach(fvg => {
-            if (!fvg.active) return;
-            if (fvg.type === 'bull' && c3.low <= fvg.bottom) fvg.active = false;
-            if (fvg.type === 'bear' && c3.high >= fvg.top) fvg.active = false;
-        });
-
-        obs.forEach(ob => {
-            if (!ob.active) return;
-            if (ob.type === 'bull' && c3.close < ob.bottom) ob.active = false;
-            if (ob.type === 'bear' && c3.close > ob.top) ob.active = false;
-        });
+        if (isHigh) swings.push({ index: i, time: curr.time, price: curr.high, type: 'high', close: curr.close });
+        if (isLow) swings.push({ index: i, time: curr.time, price: curr.low, type: 'low', close: curr.close });
     }
 
-    // LOGIKA SUPPORT & RESISTANCE BERSERTA COUNTER RETEST
-    let rawSR = [];
-    swings.forEach(sw => {
-        let isActive = true;
-        let retestCount = 0;
-        let tolerance = sw.price * 0.002; 
+    if (swings.length === 0) return;
 
-        for (let i = sw.index + 1; i < data.length; i++) {
-            let c = data[i];
-            if (sw.type === 'high') { 
-                if (c.close > sw.price + tolerance) {
-                    isActive = false; 
-                    break;
-                } else if (c.high >= sw.price - tolerance && c.close < sw.price) {
-                    retestCount++; 
-                }
-            } else { 
-                if (c.close < sw.price - tolerance) {
-                    isActive = false; 
-                    break;
-                } else if (c.low <= sw.price + tolerance && c.close > sw.price) {
-                    retestCount++; 
-                }
+    // 1. Dealing Range Makro
+    let recentSwings = swings.slice(-10);
+    if (recentSwings.length < 2) recentSwings = swings;
+
+    let macroHigh = recentSwings.reduce((max, s) => s.price > max.price ? s : max, recentSwings[0]);
+    let macroLow = recentSwings.reduce((min, s) => s.price < min.price ? s : min, recentSwings[0]);
+
+    let rangeStart = Math.min(macroHigh.time, macroLow.time);
+    let topPrice = macroHigh.price;
+    let bottomPrice = macroLow.price;
+    let midPrice = (topPrice + bottomPrice) / 2;
+
+    boxes.push({
+        startTime: rangeStart, endTime: lastTime,
+        top: topPrice, bottom: midPrice,
+        color: 'rgba(239, 68, 68, 0.03)', borderColor: 'rgba(239, 68, 68, 0.2)', label: 'Swing Range High (Premium)'
+    });
+    boxes.push({
+        startTime: rangeStart, endTime: lastTime,
+        top: midPrice, bottom: bottomPrice,
+        color: 'rgba(16, 185, 129, 0.03)', borderColor: 'rgba(16, 185, 129, 0.2)', label: 'Swing Range Low (Discount)'
+    });
+
+    // 2. Struktur BOS & ChoCh
+    let currentTrend = 'neutral';
+    let lastValidHigh = null;
+    let lastValidLow = null;
+
+    swings.forEach((sw) => {
+        if (sw.type === 'high') {
+            if (lastValidHigh && sw.close > lastValidHigh.price) {
+                let isChoCh = (currentTrend === 'bearish');
+                currentTrend = 'bullish';
+                structLines.push({
+                    startTime: lastValidHigh.time, endTime: lastTime,
+                    price: lastValidHigh.price,
+                    color: '#3b82f6', label: isChoCh ? 'ChoCh' : 'BOS'
+                });
+            }
+            lastValidHigh = sw;
+        } else if (sw.type === 'low') {
+            if (lastValidLow && sw.close < lastValidLow.price) {
+                let isChoCh = (currentTrend === 'bullish');
+                currentTrend = 'bearish';
+                structLines.push({
+                    startTime: lastValidLow.time, endTime: lastTime,
+                    price: lastValidLow.price,
+                    color: '#ef4444', label: isChoCh ? 'ChoCh' : 'BOS'
+                });
+            }
+            lastValidLow = sw;
+        }
+        zigzagPoints.push({ time: sw.time, price: sw.price });
+    });
+
+    // 3. AUTO SUPPORT & RESISTANCE DENGAN CLUSTERING FILTER (Mencegah garis menumpuk)
+    let rawSR = [];
+    let majorSwings = swings.slice(-8); 
+
+    majorSwings.forEach(sw => {
+        let levelPrice = sw.price;
+        let retests = 0;
+        let tolerance = levelPrice * 0.008; // Toleransi kedekatan 0.8%
+
+        for (let j = sw.index + 1; j < data.length; j++) {
+            let candle = data[j];
+            if (Math.abs(candle.high - levelPrice) <= tolerance || Math.abs(candle.low - levelPrice) <= tolerance) {
+                retests++;
             }
         }
 
-        if (isActive) {
-            rawSR.push({ type: sw.type === 'high' ? 'resistance' : 'support', price: sw.price, time: sw.time, retests: retestCount });
+        let isRes = sw.type === 'high';
+        rawSR.push({
+            startTime: sw.time,
+            endTime: lastTime,
+            price: levelPrice,
+            color: isRes ? '#ef4444' : '#10b981',
+            label: `${isRes ? 'Res' : 'Sup'} (Retests: ${retests})`
+        });
+    });
+
+    // Filter Clustering: Hapus garis S&R yang harganya terlalu berdekatan (jarak < 1.5%) agar tidak numpuk
+    rawSR.sort((a, b) => b.price - a.price);
+    rawSR.forEach(sr => {
+        let isTooClose = srLines.some(existing => Math.abs(existing.price - sr.price) / sr.price < 0.015);
+        if (!isTooClose) {
+            srLines.push(sr);
         }
     });
 
-    let currentPrice = data[data.length - 1].close;
-    let activeFVGs = fvgs.filter(z => z.active).slice(-4); 
-    let activeOBs = obs.filter(z => z.active).slice(-3);   
-    let activeLines = structureLines.slice(-10); 
-    let activeSR = rawSR.sort((a, b) => Math.abs(a.price - currentPrice) - Math.abs(b.price - currentPrice)).slice(0, 4); 
-    const lastTime = data[data.length - 1].time; 
-
-    // RENDERER CANVAS (VISUAL)
-    class SMCComplexRenderer {
-        constructor(obs, fvgs, sr, lines) {
-            this._obs = obs;
-            this._fvgs = fvgs;
-            this._sr = sr;
-            this._lines = lines;
+    // Canvas Renderer
+    class SMCRenderer {
+        constructor(boxList, zzPoints, sLines, srList, midPriceVal) {
+            this._boxes = boxList;
+            this._zzPoints = zzPoints;
+            this._sLines = sLines;
+            this._srList = srList;
+            this._midPriceVal = midPriceVal;
         }
+        update() {}
         renderer() {
+            const boxes = this._boxes;
+            const zzPoints = this._zzPoints;
+            const sLines = this._sLines;
+            const srList = this._srList;
+            const midPriceVal = this._midPriceVal;
             return {
                 draw: (target) => {
                     target.useBitmapCoordinateSpace(scope => {
                         const ctx = scope.context;
                         const timeScale = chart.timeScale();
-                        
-                        let endX = timeScale.timeToCoordinate(lastTime);
-                        if (endX === null) return;
-                        endX *= scope.horizontalPixelRatio;
 
-                        this._lines.forEach(line => {
-                            const startX = timeScale.timeToCoordinate(line.startTime);
-                            const breakX = timeScale.timeToCoordinate(line.endTime);
-                            const y = series.priceToCoordinate(line.price);
+                        // A. Render Kotak Dealing Range
+                        boxes.forEach(box => {
+                            const x1 = timeScale.timeToCoordinate(box.startTime);
+                            const x2 = timeScale.timeToCoordinate(box.endTime);
+                            const y1 = series.priceToCoordinate(box.top);
+                            const y2 = series.priceToCoordinate(box.bottom);
 
-                            if (startX !== null && breakX !== null && y !== null) {
-                                const x1 = startX * scope.horizontalPixelRatio;
-                                const x2 = breakX * scope.horizontalPixelRatio;
-                                const py = y * scope.verticalPixelRatio;
+                            if (x1 !== null && x2 !== null && y1 !== null && y2 !== null) {
+                                const left = Math.min(x1, x2) * scope.horizontalPixelRatio;
+                                const top = Math.min(y1, y2) * scope.verticalPixelRatio;
+                                const width = Math.max(2, Math.abs(x2 - x1)) * scope.horizontalPixelRatio;
+                                const height = Math.max(2, Math.abs(y2 - y1)) * scope.verticalPixelRatio;
 
-                                ctx.beginPath();
+                                ctx.fillStyle = box.color;
+                                ctx.fillRect(left, top, width, height);
+
+                                ctx.strokeStyle = box.borderColor;
                                 ctx.lineWidth = 1 * scope.horizontalPixelRatio;
-                                ctx.strokeStyle = line.type === 'CHoCH' ? (line.isBullish ? '#3b82f6' : '#f97316') : (line.isBullish ? '#22c55e' : '#ef4444'); 
-                                ctx.setLineDash([4, 4]); 
-                                ctx.moveTo(x1, py);
-                                ctx.lineTo(x2, py);
-                                ctx.stroke();
-                                ctx.setLineDash([]);
+                                ctx.strokeRect(left, top, width, height);
 
-                                ctx.fillStyle = ctx.strokeStyle;
-                                ctx.font = '10px Arial';
-                                ctx.fillText(line.type, x1 + (x2 - x1) / 2 - 12, py - 5);
+                                if (box.label && height > 14 * scope.verticalPixelRatio) {
+                                    ctx.fillStyle = box.borderColor;
+                                    ctx.font = 'bold 9px sans-serif';
+                                    ctx.fillText(box.label, left + (6 * scope.horizontalPixelRatio), top + (13 * scope.verticalPixelRatio));
+                                }
                             }
                         });
 
-                        this._obs.forEach(ob => {
-                            const startX = timeScale.timeToCoordinate(ob.time);
-                            const topY = series.priceToCoordinate(ob.top);
-                            const bottomY = series.priceToCoordinate(ob.bottom);
-                            if (startX !== null && topY !== null && bottomY !== null) {
-                                const x = startX * scope.horizontalPixelRatio;
-                                const y1 = topY * scope.verticalPixelRatio;
-                                const y2 = bottomY * scope.verticalPixelRatio;
-                                const w = endX - x;
-                                const h = Math.abs(y2 - y1);
-                                const rectTop = Math.min(y1, y2);
+                        // B. Garis Equilibrium 50%
+                        const midY = series.priceToCoordinate(midPriceVal);
+                        const startX = timeScale.timeToCoordinate(rangeStart);
+                        const endX = timeScale.timeToCoordinate(lastTime);
+                        if (midY !== null && startX !== null && endX !== null) {
+                            ctx.beginPath();
+                            ctx.strokeStyle = 'rgba(161, 161, 170, 0.4)';
+                            ctx.lineWidth = 1 * scope.horizontalPixelRatio;
+                            ctx.setLineDash([4, 4]);
+                            ctx.moveTo(startX * scope.horizontalPixelRatio, midY * scope.verticalPixelRatio);
+                            ctx.lineTo(endX * scope.horizontalPixelRatio, midY * scope.verticalPixelRatio);
+                            ctx.stroke();
+                            ctx.setLineDash([]);
+                        }
 
-                                ctx.fillStyle = ob.type === 'bull' ? 'rgba(34, 197, 94, 0.18)' : 'rgba(239, 68, 68, 0.18)';
-                                ctx.fillRect(x, rectTop, Math.max(w, 2), Math.max(h, 2));
-                                ctx.strokeStyle = ob.type === 'bull' ? '#22c55e' : '#ef4444';
-                                ctx.lineWidth = 1;
-                                ctx.strokeRect(x, rectTop, Math.max(w, 2), Math.max(h, 2));
-                                ctx.fillStyle = ob.type === 'bull' ? '#22c55e' : '#ef4444';
-                                ctx.font = 'bold 11px Arial';
-                                ctx.fillText(`OB ${ob.type.toUpperCase()}`, x + 5, rectTop + 14);
-                            }
-                        });
-
-                        this._fvgs.forEach(fvg => {
-                            const startX = timeScale.timeToCoordinate(fvg.time);
-                            const topY = series.priceToCoordinate(fvg.top);
-                            const bottomY = series.priceToCoordinate(fvg.bottom);
-                            if (startX !== null && topY !== null && bottomY !== null) {
-                                const x = startX * scope.horizontalPixelRatio;
-                                const y1 = topY * scope.verticalPixelRatio;
-                                const y2 = bottomY * scope.verticalPixelRatio;
-                                const w = endX - x;
-                                const h = Math.abs(y2 - y1);
-                                const rectTop = Math.min(y1, y2);
-
-                                ctx.fillStyle = fvg.type === 'bull' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)';
-                                ctx.fillRect(x, rectTop, Math.max(w, 2), Math.max(h, 2));
-                                ctx.fillStyle = fvg.type === 'bull' ? '#10b981' : '#f43f5e';
-                                ctx.font = '10px Arial';
-                                ctx.fillText('FVG', x + 5, rectTop + 12);
-                            }
-                        });
-
-                        this._sr.forEach(sr => {
-                            const startX = timeScale.timeToCoordinate(sr.time);
-                            const y = series.priceToCoordinate(sr.price);
-                            if (startX !== null && y !== null) {
-                                const x = startX * scope.horizontalPixelRatio;
-                                const py = y * scope.verticalPixelRatio;
-                                
+                        // C. Garis Struktur BOS & ChoCh
+                        sLines.forEach(line => {
+                            const lx1 = timeScale.timeToCoordinate(line.startTime);
+                            const lx2 = timeScale.timeToCoordinate(line.endTime);
+                            const ly = series.priceToCoordinate(line.price);
+                            if (lx1 !== null && lx2 !== null && ly !== null) {
                                 ctx.beginPath();
-                                ctx.lineWidth = 1.5;
-                                ctx.strokeStyle = sr.type === 'support' ? '#10b981' : '#ef4444';
-                                if (sr.retests === 0) ctx.setLineDash([4, 4]); 
-                                else ctx.setLineDash([]);
-                                ctx.moveTo(x, py);
-                                ctx.lineTo(endX, py); 
+                                ctx.strokeStyle = line.color;
+                                ctx.lineWidth = 1.5 * scope.horizontalPixelRatio;
+                                ctx.moveTo(lx1 * scope.horizontalPixelRatio, ly * scope.verticalPixelRatio);
+                                ctx.lineTo(lx2 * scope.horizontalPixelRatio, ly * scope.verticalPixelRatio);
                                 ctx.stroke();
-                                ctx.setLineDash([]);
-                                
-                                const text = `${sr.type === 'support' ? 'Sup' : 'Res'} (Retests: ${sr.retests})`;
-                                ctx.font = 'bold 11px Arial';
-                                const textWidth = ctx.measureText(text).width;
-                                
-                                const rectX = endX - textWidth - 10;
-                                const rectY = py - 18;
-                                
-                                ctx.fillStyle = 'rgba(9, 9, 11, 0.85)'; 
-                                ctx.fillRect(rectX - 4, rectY - 2, textWidth + 8, 16);
-                                
-                                ctx.fillStyle = sr.type === 'support' ? '#10b981' : '#ef4444';
-                                ctx.fillText(text, rectX, py - 6);
+
+                                ctx.fillStyle = line.color;
+                                ctx.font = 'bold 10px sans-serif';
+                                ctx.fillText(line.label, lx1 * scope.horizontalPixelRatio + 5, ly * scope.verticalPixelRatio - 4);
                             }
                         });
+
+                        // D. Garis Support & Resistance Terfilter (Tanpa Tumpukan)
+                        srList.forEach(sr => {
+                            const sx1 = timeScale.timeToCoordinate(sr.startTime);
+                            const sx2 = timeScale.timeToCoordinate(sr.endTime);
+                            const sy = series.priceToCoordinate(sr.price);
+                            if (sx1 !== null && sx2 !== null && sy !== null) {
+                                ctx.beginPath();
+                                ctx.strokeStyle = sr.color;
+                                ctx.lineWidth = 1.2 * scope.horizontalPixelRatio;
+                                ctx.moveTo(sx1 * scope.horizontalPixelRatio, sy * scope.verticalPixelRatio);
+                                ctx.lineTo(sx2 * scope.horizontalPixelRatio, sy * scope.verticalPixelRatio);
+                                ctx.stroke();
+
+                                ctx.fillStyle = sr.color;
+                                ctx.font = 'bold 9px sans-serif';
+                                ctx.fillText(sr.label, sx1 * scope.horizontalPixelRatio + 6, sy * scope.verticalPixelRatio - 3);
+                            }
+                        });
+
+                        // E. Garis Zigzag Tren
+                        if (zzPoints.length > 1) {
+                            ctx.beginPath();
+                            ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
+                            ctx.lineWidth = 1.5 * scope.horizontalPixelRatio;
+                            let first = true;
+                            zzPoints.forEach(pt => {
+                                const x = timeScale.timeToCoordinate(pt.time);
+                                const y = series.priceToCoordinate(pt.price);
+                                if (x !== null && y !== null) {
+                                    const cx = x * scope.horizontalPixelRatio;
+                                    const cy = y * scope.verticalPixelRatio;
+                                    if (first) { ctx.moveTo(cx, cy); first = false; }
+                                    else { ctx.lineTo(cx, cy); }
+                                }
+                            });
+                            ctx.stroke();
+                        }
                     });
                 }
             };
@@ -271,13 +308,13 @@ function applySmartMoneyConcepts(data, chart, series) {
     }
 
     class SMCPlugin {
-        constructor(obs, fvgs, sr, lines) {
-            this._paneView = { renderer: () => new SMCComplexRenderer(obs, fvgs, sr, lines).renderer() };
+        constructor(boxList, zzPoints, sLines, srList, midPriceVal) {
+            this._paneView = { renderer: () => new SMCRenderer(boxList, zzPoints, sLines, srList, midPriceVal).renderer() };
         }
         paneViews() { return [this._paneView]; }
     }
 
-    currentSmcPlugin = new SMCPlugin(activeOBs, activeFVGs, activeSR, activeLines);
+    currentSmcPlugin = new SMCPlugin(boxes, zigzagPoints, structLines, srLines, midPrice);
     if (typeof series.attachPrimitive === 'function') {
         series.attachPrimitive(currentSmcPlugin);
     }
