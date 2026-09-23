@@ -1,6 +1,7 @@
 /**
  * ============================================================================
- * SMC PRO - INSTITUTIONAL SUITE (With Volatility & S&R Clustering Filters)
+ * SMC PRO - INSTITUTIONAL SUITE (Master Version: All Bugs Fixed)
+ * Features: Dynamic Dealing Range, Clean OB/FVG, Strong/Weak S&R
  * ============================================================================
  */
 
@@ -13,7 +14,6 @@ function calculateMarketStructureAndMarkers(data) {
     let swings = [];
     for (let i = 3; i < data.length - 3; i++) {
         let curr = data[i];
-        // Filter Volatilitas: Abaikan candle yang flat / tidak punya rentang harga (High == Low)
         if (curr.high === curr.low) continue;
 
         let isHigh = true, isLow = true;
@@ -69,15 +69,15 @@ function drawSmartMoneyZones(data, chart, series) {
     if (data.length < 20) return;
 
     let boxes = [];
-    let zigzagPoints = [];
     let structLines = [];
     let srLines = [];
     const lastTime = data[data.length - 1].time;
+    const currentPrice = data[data.length - 1].close;
 
     let swings = [];
     for (let i = 3; i < data.length - 3; i++) {
         let curr = data[i];
-        if (curr.high === curr.low) continue; // Abaikan candle flat
+        if (curr.high === curr.low) continue;
 
         let isHigh = true, isLow = true;
         for (let j = 1; j <= 3; j++) {
@@ -90,30 +90,146 @@ function drawSmartMoneyZones(data, chart, series) {
 
     if (swings.length === 0) return;
 
-    // 1. Dealing Range Makro
-    let recentSwings = swings.slice(-10);
-    if (recentSwings.length < 2) recentSwings = swings;
+    // --- DEKLARASI GLOBAL AGAR TIDAK ERROR ---
+    let midPrice = currentPrice; 
+    let rangeStart = data[0].time;
 
-    let macroHigh = recentSwings.reduce((max, s) => s.price > max.price ? s : max, recentSwings[0]);
-    let macroLow = recentSwings.reduce((min, s) => s.price < min.price ? s : min, recentSwings[0]);
+    // 1. Dealing Range Makro (Premium & Discount Zone) - VALID SMC LOGIC
+    let lastHighSwing = null;
+    let lastLowSwing = null;
 
-    let rangeStart = Math.min(macroHigh.time, macroLow.time);
-    let topPrice = macroHigh.price;
-    let bottomPrice = macroLow.price;
-    let midPrice = (topPrice + bottomPrice) / 2;
+    for (let i = swings.length - 1; i >= 0; i--) {
+        if (swings[i].type === 'high' && !lastHighSwing) lastHighSwing = swings[i];
+        if (swings[i].type === 'low' && !lastLowSwing) lastLowSwing = swings[i];
+        if (lastHighSwing && lastLowSwing) break;
+    }
 
-    boxes.push({
-        startTime: rangeStart, endTime: lastTime,
-        top: topPrice, bottom: midPrice,
-        color: 'rgba(239, 68, 68, 0.03)', borderColor: 'rgba(239, 68, 68, 0.2)', label: 'Swing Range High (Premium)'
-    });
-    boxes.push({
-        startTime: rangeStart, endTime: lastTime,
-        top: midPrice, bottom: bottomPrice,
-        color: 'rgba(16, 185, 129, 0.03)', borderColor: 'rgba(16, 185, 129, 0.2)', label: 'Swing Range Low (Discount)'
-    });
+    if (lastHighSwing && lastLowSwing) {
+        let topPrice = Math.max(lastHighSwing.price, currentPrice);
+        let bottomPrice = Math.min(lastLowSwing.price, currentPrice);
+        rangeStart = Math.min(lastHighSwing.time, lastLowSwing.time);
+        midPrice = (topPrice + bottomPrice) / 2;
 
-    // 2. Struktur BOS & ChoCh
+        boxes.push({
+            startTime: rangeStart, endTime: lastTime,
+            top: topPrice, bottom: midPrice,
+            color: 'rgba(239, 68, 68, 0.02)', borderColor: 'rgba(239, 68, 68, 0.15)', label: 'Premium Zone'
+        });
+        boxes.push({
+            startTime: rangeStart, endTime: lastTime,
+            top: midPrice, bottom: bottomPrice,
+            color: 'rgba(16, 185, 129, 0.02)', borderColor: 'rgba(16, 185, 129, 0.15)', label: 'Discount Zone'
+        });
+    }
+
+    // 2. Deteksi Order Block (Hanya Menampilkan yang Valid / Belum Terlewati)
+    let validOBs = [];
+
+    for (let i = 2; i < data.length - 2; i++) {
+        let curr = data[i];
+        let next = data[i + 1];
+
+        // Bearish OB
+        if (curr.close < curr.open && next.close < next.open && next.close < curr.low) {
+            let obTop = curr.high;
+            let obBottom = curr.low;
+            let isBroken = false;
+
+            for (let k = i + 2; k < data.length; k++) {
+                if (data[k].close > obTop) {
+                    isBroken = true;
+                    break;
+                }
+            }
+
+            if (!isBroken) {
+                validOBs.push({
+                    startTime: curr.time, endTime: lastTime,
+                    top: obTop, bottom: obBottom,
+                    color: 'rgba(239, 68, 68, 0.18)', borderColor: 'rgba(239, 68, 68, 0.6)', label: 'OB BEAR'
+                });
+            }
+        }
+
+        // Bullish OB
+        if (curr.close > curr.open && next.close > next.open && next.close > curr.high) {
+            let obTop = curr.high;
+            let obBottom = curr.low;
+            let isBroken = false;
+
+            for (let k = i + 2; k < data.length; k++) {
+                if (data[k].close < obBottom) {
+                    isBroken = true;
+                    break;
+                }
+            }
+
+            if (!isBroken) {
+                validOBs.push({
+                    startTime: curr.time, endTime: lastTime,
+                    top: obTop, bottom: obBottom,
+                    color: 'rgba(16, 185, 129, 0.18)', borderColor: 'rgba(16, 185, 129, 0.6)', label: 'OB BULL'
+                });
+            }
+        }
+    }
+
+    if (validOBs.length > 0) boxes.push(...validOBs.slice(-3));
+
+    // 3. Deteksi Fair Value Gap (Hanya FVG yang Belum Tertutup)
+    let validFVGs = [];
+    for (let i = 1; i < data.length - 1; i++) {
+        let prev = data[i - 1];
+        let next = data[i + 1];
+
+        // Bullish FVG
+        if (prev.high < next.low) {
+            let fvgTop = next.low;
+            let fvgBottom = prev.high;
+            let isFilled = false;
+
+            for (let k = i + 2; k < data.length; k++) {
+                if (data[k].low <= fvgBottom) {
+                    isFilled = true;
+                    break;
+                }
+            }
+
+            if (!isFilled) {
+                validFVGs.push({
+                    startTime: prev.time, endTime: lastTime,
+                    top: fvgTop, bottom: fvgBottom,
+                    color: 'rgba(16, 185, 129, 0.12)', borderColor: 'rgba(16, 185, 129, 0.4)', label: 'FVG BULL'
+                });
+            }
+        }
+
+        // Bearish FVG
+        if (prev.low > next.high) {
+            let fvgTop = prev.low;
+            let fvgBottom = next.high;
+            let isFilled = false;
+
+            for (let k = i + 2; k < data.length; k++) {
+                if (data[k].high >= fvgTop) {
+                    isFilled = true;
+                    break;
+                }
+            }
+
+            if (!isFilled) {
+                validFVGs.push({
+                    startTime: prev.time, endTime: lastTime,
+                    top: fvgTop, bottom: fvgBottom,
+                    color: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.4)', label: 'FVG BEAR'
+                });
+            }
+        }
+    }
+
+    if (validFVGs.length > 0) boxes.push(...validFVGs.slice(-3));
+
+    // 4. Struktur BOS Aktif (Dibatasi 2 terakhir)
     let currentTrend = 'neutral';
     let lastValidHigh = null;
     let lastValidLow = null;
@@ -121,88 +237,104 @@ function drawSmartMoneyZones(data, chart, series) {
     swings.forEach((sw) => {
         if (sw.type === 'high') {
             if (lastValidHigh && sw.close > lastValidHigh.price) {
-                let isChoCh = (currentTrend === 'bearish');
                 currentTrend = 'bullish';
                 structLines.push({
                     startTime: lastValidHigh.time, endTime: lastTime,
                     price: lastValidHigh.price,
-                    color: '#3b82f6', label: isChoCh ? 'ChoCh' : 'BOS'
+                    color: '#10b981', label: 'BOS'
                 });
             }
             lastValidHigh = sw;
         } else if (sw.type === 'low') {
             if (lastValidLow && sw.close < lastValidLow.price) {
-                let isChoCh = (currentTrend === 'bullish');
                 currentTrend = 'bearish';
                 structLines.push({
                     startTime: lastValidLow.time, endTime: lastTime,
                     price: lastValidLow.price,
-                    color: '#ef4444', label: isChoCh ? 'ChoCh' : 'BOS'
+                    color: '#ef4444', label: 'BOS'
                 });
             }
             lastValidLow = sw;
         }
-        zigzagPoints.push({ time: sw.time, price: sw.price });
     });
 
-    // 3. AUTO SUPPORT & RESISTANCE DENGAN CLUSTERING FILTER (Mencegah garis menumpuk)
+    if (structLines.length > 2) structLines = structLines.slice(-2);
+
+    // 5. LOGIKA WEAK vs STRONG SUPPORT & RESISTANCE (Menghilang Jika Jebol)
     let rawSR = [];
     let majorSwings = swings.slice(-8); 
 
     majorSwings.forEach(sw => {
         let levelPrice = sw.price;
         let retests = 0;
-        let tolerance = levelPrice * 0.008; // Toleransi kedekatan 0.8%
+        let tolerance = levelPrice * 0.008; 
+        let isBroken = false;
+        let lastRetestIndex = sw.index; 
 
         for (let j = sw.index + 1; j < data.length; j++) {
             let candle = data[j];
+            
+            if (sw.type === 'high' && candle.close > levelPrice + tolerance) {
+                isBroken = true;
+                break;
+            } else if (sw.type === 'low' && candle.close < levelPrice - tolerance) {
+                isBroken = true;
+                break;
+            }
+
             if (Math.abs(candle.high - levelPrice) <= tolerance || Math.abs(candle.low - levelPrice) <= tolerance) {
-                retests++;
+                if (j - lastRetestIndex > 2) {
+                    retests++;
+                    lastRetestIndex = j;
+                }
             }
         }
 
-        let isRes = sw.type === 'high';
-        rawSR.push({
-            startTime: sw.time,
-            endTime: lastTime,
-            price: levelPrice,
-            color: isRes ? '#ef4444' : '#10b981',
-            label: `${isRes ? 'Res' : 'Sup'} (Retests: ${retests})`
-        });
+        if (!isBroken) {
+            let isRes = sw.type === 'high';
+            let isStrong = retests >= 3; 
+            
+            rawSR.push({
+                startTime: sw.time,
+                endTime: lastTime,
+                price: levelPrice,
+                color: isRes ? '#ef4444' : '#10b981',
+                strength: isStrong, 
+                label: `${isStrong ? 'Strong' : 'Weak'} ${isRes ? 'Res' : 'Sup'} (${retests}x)`
+            });
+        }
     });
 
-    // Filter Clustering: Hapus garis S&R yang harganya terlalu berdekatan (jarak < 1.5%) agar tidak numpuk
     rawSR.sort((a, b) => b.price - a.price);
     rawSR.forEach(sr => {
         let isTooClose = srLines.some(existing => Math.abs(existing.price - sr.price) / sr.price < 0.015);
-        if (!isTooClose) {
-            srLines.push(sr);
-        }
+        if (!isTooClose) srLines.push(sr);
     });
 
     // Canvas Renderer
     class SMCRenderer {
-        constructor(boxList, zzPoints, sLines, srList, midPriceVal) {
+        constructor(boxList, sLines, srList, midPriceVal, rStart) {
             this._boxes = boxList;
-            this._zzPoints = zzPoints;
             this._sLines = sLines;
             this._srList = srList;
             this._midPriceVal = midPriceVal;
+            this._rStart = rStart;
         }
         update() {}
         renderer() {
             const boxes = this._boxes;
-            const zzPoints = this._zzPoints;
             const sLines = this._sLines;
             const srList = this._srList;
             const midPriceVal = this._midPriceVal;
+            const rStart = this._rStart;
+
             return {
                 draw: (target) => {
                     target.useBitmapCoordinateSpace(scope => {
                         const ctx = scope.context;
                         const timeScale = chart.timeScale();
 
-                        // A. Render Kotak Dealing Range
+                        // A. Render Kotak Dealing Range, OB, & FVG
                         boxes.forEach(box => {
                             const x1 = timeScale.timeToCoordinate(box.startTime);
                             const x2 = timeScale.timeToCoordinate(box.endTime);
@@ -222,17 +354,17 @@ function drawSmartMoneyZones(data, chart, series) {
                                 ctx.lineWidth = 1 * scope.horizontalPixelRatio;
                                 ctx.strokeRect(left, top, width, height);
 
-                                if (box.label && height > 14 * scope.verticalPixelRatio) {
+                                if (box.label && height > 10 * scope.verticalPixelRatio) {
                                     ctx.fillStyle = box.borderColor;
                                     ctx.font = 'bold 9px sans-serif';
-                                    ctx.fillText(box.label, left + (6 * scope.horizontalPixelRatio), top + (13 * scope.verticalPixelRatio));
+                                    ctx.fillText(box.label, left + (6 * scope.horizontalPixelRatio), top + (12 * scope.verticalPixelRatio));
                                 }
                             }
                         });
 
                         // B. Garis Equilibrium 50%
                         const midY = series.priceToCoordinate(midPriceVal);
-                        const startX = timeScale.timeToCoordinate(rangeStart);
+                        const startX = timeScale.timeToCoordinate(rStart);
                         const endX = timeScale.timeToCoordinate(lastTime);
                         if (midY !== null && startX !== null && endX !== null) {
                             ctx.beginPath();
@@ -245,7 +377,7 @@ function drawSmartMoneyZones(data, chart, series) {
                             ctx.setLineDash([]);
                         }
 
-                        // C. Garis Struktur BOS & ChoCh
+                        // C. Garis Struktur BOS Aktif
                         sLines.forEach(line => {
                             const lx1 = timeScale.timeToCoordinate(line.startTime);
                             const lx2 = timeScale.timeToCoordinate(line.endTime);
@@ -264,7 +396,7 @@ function drawSmartMoneyZones(data, chart, series) {
                             }
                         });
 
-                        // D. Garis Support & Resistance Terfilter (Tanpa Tumpukan)
+                        // D. Garis Support & Resistance (Weak vs Strong)
                         srList.forEach(sr => {
                             const sx1 = timeScale.timeToCoordinate(sr.startTime);
                             const sx2 = timeScale.timeToCoordinate(sr.endTime);
@@ -272,35 +404,20 @@ function drawSmartMoneyZones(data, chart, series) {
                             if (sx1 !== null && sx2 !== null && sy !== null) {
                                 ctx.beginPath();
                                 ctx.strokeStyle = sr.color;
-                                ctx.lineWidth = 1.2 * scope.horizontalPixelRatio;
+                                
+                                ctx.lineWidth = (sr.strength ? 2 : 1) * scope.horizontalPixelRatio;
+                                ctx.setLineDash(sr.strength ? [] : [3, 3]); 
+                                
                                 ctx.moveTo(sx1 * scope.horizontalPixelRatio, sy * scope.verticalPixelRatio);
                                 ctx.lineTo(sx2 * scope.horizontalPixelRatio, sy * scope.verticalPixelRatio);
                                 ctx.stroke();
+                                ctx.setLineDash([]);
 
                                 ctx.fillStyle = sr.color;
-                                ctx.font = 'bold 9px sans-serif';
-                                ctx.fillText(sr.label, sx1 * scope.horizontalPixelRatio + 6, sy * scope.verticalPixelRatio - 3);
+                                ctx.font = sr.strength ? 'bold 10px sans-serif' : '9px sans-serif';
+                                ctx.fillText(sr.label, sx1 * scope.horizontalPixelRatio + 6, sy * scope.verticalPixelRatio - 4);
                             }
                         });
-
-                        // E. Garis Zigzag Tren
-                        if (zzPoints.length > 1) {
-                            ctx.beginPath();
-                            ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
-                            ctx.lineWidth = 1.5 * scope.horizontalPixelRatio;
-                            let first = true;
-                            zzPoints.forEach(pt => {
-                                const x = timeScale.timeToCoordinate(pt.time);
-                                const y = series.priceToCoordinate(pt.price);
-                                if (x !== null && y !== null) {
-                                    const cx = x * scope.horizontalPixelRatio;
-                                    const cy = y * scope.verticalPixelRatio;
-                                    if (first) { ctx.moveTo(cx, cy); first = false; }
-                                    else { ctx.lineTo(cx, cy); }
-                                }
-                            });
-                            ctx.stroke();
-                        }
                     });
                 }
             };
@@ -308,13 +425,13 @@ function drawSmartMoneyZones(data, chart, series) {
     }
 
     class SMCPlugin {
-        constructor(boxList, zzPoints, sLines, srList, midPriceVal) {
-            this._paneView = { renderer: () => new SMCRenderer(boxList, zzPoints, sLines, srList, midPriceVal).renderer() };
+        constructor(boxList, sLines, srList, midPriceVal, rStart) {
+            this._paneView = { renderer: () => new SMCRenderer(boxList, sLines, srList, midPriceVal, rStart).renderer() };
         }
         paneViews() { return [this._paneView]; }
     }
 
-    currentSmcPlugin = new SMCPlugin(boxes, zigzagPoints, structLines, srLines, midPrice);
+    currentSmcPlugin = new SMCPlugin(boxes, structLines, srLines, midPrice, rangeStart);
     if (typeof series.attachPrimitive === 'function') {
         series.attachPrimitive(currentSmcPlugin);
     }

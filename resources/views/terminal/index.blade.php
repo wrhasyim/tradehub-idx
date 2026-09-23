@@ -235,34 +235,29 @@
         // Fungsi Master Switch SMC PRO
         // Fungsi Master Switch SMC PRO (Diperbarui untuk Ultimate Suite)
         function applySmcState() {
-            const btnSMC = document.getElementById('toggleSMC');
-            
-            if (smcActive && customRawData.length > 0) {
-                // Jalankan Ultimate SMC Suite dari public/js/smc.js (Satu fungsi terpadu)
-                if (typeof applySmartMoneyConcepts === "function") {
-                    applySmartMoneyConcepts(customRawData, customChart, candleSeries);
-                }
-                
-                // Ubah Tombol jadi ON
-                btnSMC.textContent = "SMC PRO : ON";
-                btnSMC.className = "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-600 text-white border border-indigo-500 shadow";
-            } else {
-                // Matikan Semua Fitur SMC (Bersihkan Chart)
-                candleSeries.setMarkers([]); // Hapus marker BOS & CHoCH
-                
-                // Hapus Plugin Canvas Zona (OB, FVG, dan Garis S/R)
-                if (typeof currentSmcPlugin !== 'undefined' && currentSmcPlugin !== null) {
-                    if (typeof candleSeries.detachPrimitive === 'function') {
-                        try { candleSeries.detachPrimitive(currentSmcPlugin); } catch(e) {}
-                    }
-                    currentSmcPlugin = null;
-                }
-                
-                // Ubah Tombol jadi OFF
-                btnSMC.textContent = "SMC PRO : OFF";
-                btnSMC.className = "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-900/40 text-indigo-400 border border-indigo-700/50 hover:bg-indigo-800/50 transition-colors";
-            }
-        }
+    const btnSMC = document.getElementById('toggleSMC');
+    
+    if (smcActive && customRawData.length > 0) {
+        // 1. Panggil fungsi render zona S&R, Order Block, dan Dealing Range dari smc.js
+        drawSmartMoneyZones(customRawData, customChart, candleSeries);
+        
+        // 2. Panggil marker struktur market (HH, HL, LH, LL, BOS, ChoCh)
+        const marketMarkers = calculateMarketStructureAndMarkers(customRawData);
+        candleSeries.setMarkers(marketMarkers);
+        
+        // Ubah Tampilan Tombol jadi ON
+        btnSMC.textContent = "SMC PRO : ON";
+        btnSMC.className = "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-600 text-white border border-indigo-500 shadow";
+    } else {
+        // Matikan SMC: Bersihkan marker dan hapus plugin canvas zona
+        candleSeries.setMarkers([]);
+        clearSmcZones(candleSeries);
+        
+        // Ubah Tampilan Tombol jadi OFF
+        btnSMC.textContent = "SMC PRO : OFF";
+        btnSMC.className = "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-900/40 text-indigo-400 border border-indigo-700/50 hover:bg-indigo-800/50 transition-colors";
+    }
+}
 
         function executeLoad(symbol) {
             if (currentMode === 'tv') {

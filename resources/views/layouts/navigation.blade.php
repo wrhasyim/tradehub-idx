@@ -22,6 +22,11 @@
                     <a href="{{ route('journal.index') }}" class="inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium leading-5 transition duration-150 ease-in-out {{ request()->routeIs('journal.*') ? 'border-[#ff9900] text-white' : 'border-transparent text-gray-400 hover:text-white hover:border-zinc-700' }}">
                         {{ __('Trading Journal') }}
                     </a>
+
+                    <!-- MENU TERMINAL PRO (DESKTOP) -->
+                    <a href="{{ route('terminal.index') }}" class="inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium leading-5 transition duration-150 ease-in-out {{ request()->routeIs('terminal.*') ? 'border-[#ff9900] text-white' : 'border-transparent text-gray-400 hover:text-white hover:border-zinc-700' }}">
+                        {{ __('Terminal Pro') }}
+                    </a>
                 </div>
             </div>
 
@@ -82,6 +87,10 @@
                     </a>
                     <a href="{{ route('journal.index') }}" class="block w-full px-4 py-3 rounded-xl text-sm font-medium transition duration-150 ease-in-out {{ request()->routeIs('journal.*') ? 'bg-[#ff9900]/10 text-[#ff9900]' : 'text-zinc-400 hover:text-white hover:bg-zinc-800' }}">
                         Trading Journal
+                    </a>
+                    <!-- MENU TERMINAL PRO (MOBILE) -->
+                    <a href="{{ route('terminal.index') }}" class="block w-full px-4 py-3 rounded-xl text-sm font-medium transition duration-150 ease-in-out {{ request()->routeIs('terminal.*') ? 'bg-[#ff9900]/10 text-[#ff9900]' : 'text-zinc-400 hover:text-white hover:bg-zinc-800' }}">
+                        Terminal Pro
                     </a>
                 </div>
             </div>
