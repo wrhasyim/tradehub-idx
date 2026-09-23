@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Money & Network Alpha Finder</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.3.1/css/all.min.css">
+    <!-- Vis-Network for Graph Visualization -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <!-- TradingView Lightweight Charts -->
+    <script type="text/javascript" src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <!-- Fallback dataset for direct file:// or nested path browser loading -->
+    <script type="text/javascript" src="../data/network_alpha_data.js"></script>
+    <script type="text/javascript" src="data/network_alpha_data.js"></script>
+    <script type="text/javascript" src="network_alpha_data.js"></script>
+    
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <header>
+        <div class="logo-container">
+            <i class="fa-solid fa-circle-nodes"></i>
+            <h1>Smart Money & Network Alpha Finder</h1>
+            <span>IDX/BEI Edition</span>
+        </div>
+        <nav>
+            <button class="nav-btn active" onclick="switchTab('screener')">
+                <i class="fa-solid fa-filter-list"></i> Stock Screener
+            </button>
+            <button class="nav-btn" onclick="switchTab('charts')">
+                <i class="fa-solid fa-chart-candlestick"></i> Charts & Flow
+            </button>
+            <button class="nav-btn" onclick="switchTab('insiders')">
+                <i class="fa-solid fa-user-tie"></i> Super Insiders
+            </button>
+            <button class="nav-btn" onclick="switchTab('conglomerates')">
+                <i class="fa-solid fa-sitemap"></i> Conglomerates
+            </button>
+            <button class="nav-btn" onclick="switchTab('methodology')">
+                <i class="fa-solid fa-book-bookmark"></i> Methodology
+            </button>
+        </nav>
+        <div id="wsBadge" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; padding: 0.35rem 0.75rem; border-radius: 9999px;">
+            <i class="fa-solid fa-circle-dot"></i>
+            <span id="wsStatusText">Live Feed: Initializing...</span>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Error Banner if Data Missing -->
+        <div id="errorBanner" class="error-banner">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <h2>Dashboard Data Missing or Empty</h2>
+            <p>We couldn't load the processed analysis file at <code>data/network_alpha_data.json</code>.</p>
+            <p>Please run the python pipeline script from your terminal to generate the data:</p>
+            <p><code>uv run python/analyze_network_alpha.py</code></p>
+        </div>
+
+        <div id="dashboardContent" style="display: none;">
+            
+            <!-- SCREENER TAB -->
+            <div id="screenerTab" class="tab-panel active">
+                
+                <!-- Stats Row -->
+                <div class="stats-grid">
+                    <div class="glass-card stat-card">
+                        <div class="stat-icon blue"><i class="fa-solid fa-building"></i></div>
+                        <div class="stat-info">
+                            <h3>Total Screened</h3>
+                            <p id="statTotalCompanies">0</p>
+                        </div>
+                    </div>
+                    <div class="glass-card stat-card">
+                        <div class="stat-icon green"><i class="fa-solid fa-chart-line-up"></i></div>
+                        <div class="stat-info">
+                            <h3>Avg Profit Margin</h3>
+                            <p id="statAvgNpm">0.0%</p>
+                        </div>
+                    </div>
+                    <div class="glass-card stat-card">
+                        <div class="stat-icon purple"><i class="fa-solid fa-circle-nodes"></i></div>
+                        <div class="stat-info">
+                            <h3>Overlapping Board Nodes</h3>
+                            <p id="statTotalBridges">0</p>
+                        </div>
+                    </div>
+                    <div class="glass-card stat-card">
+                        <div class="stat-icon orange"><i class="fa-solid fa-gem"></i></div>
+                        <div class="stat-info">
+                            <h3>Top Rated Stock</h3>
+                            <p id="statTopStock">N/A</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="workspace">
+                    
+                    <!-- Screener Table Column -->
+                    <div class="workspace-main glass-card">
+                        <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="fa-solid fa-bolt" style="color: var(--accent-gold);"></i> Smart Money Synergy Screener
+                        </h2>
+                        
+                        <div class="filter-bar">
+                            <div class="input-group">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                                <input type="text" id="searchBar" class="form-control" placeholder="Search by ticker or name..." onkeyup="filterScreenerTable()">
+                            </div>
+                            <div>
+                                <select id="sectorFilter" class="form-control" onchange="filterScreenerTable()">
+                                    <option value="">All Sectors</option>
+                                </select>
+                            </div>
+                            <div>
+                                <select id="scoreFilter" class="form-control" onchange="filterScreenerTable()">
+                                    <option value="">All Scores</option>
+                                    <option value="high">High (>70 SMSS)</option>
+                                    <option value="medium">Medium (45-70 SMSS)</option>
+                                    <option value="low">Low (<45 SMSS)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <select id="valuationFilter" class="form-control" onchange="filterScreenerTable()">
+                                    <option value="">All Valuations</option>
+                                    <option value="undervalued">Undervalued (PBV < 1.0)</option>
+                                    <option value="pe15">Reasonable PE (PE < 15)</option>
+                                    <option value="profitable">High Profit (ROE > 15%)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="table-container">
+                            <table id="screenerTable">
+                                <thead>
+                                    <tr>
+                                        <th onclick="sortScreenerTable('code')" style="cursor: pointer; user-select: none;">Ticker <i id="sort_icon_code" class="fa-solid fa-sort" style="font-size: 0.75rem; margin-left: 4px; opacity: 0.5;"></i></th>
+                                        <th onclick="sortScreenerTable('name')" style="cursor: pointer; user-select: none;">Company Name <i id="sort_icon_name" class="fa-solid fa-sort" style="font-size: 0.75rem; margin-left: 4px; opacity: 0.5;"></i></th>
+                                        <th onclick="sortScreenerTable('sector')" style="cursor: pointer; user-select: none;">Sector <i id="sort_icon_sector" class="fa-solid fa-sort" style="font-size: 0.75rem; margin-left: 4px; opacity: 0.5;"></i></th>
+                                        <th onclick="sortScreenerTable('roe')" style="cursor: pointer; user-select: none;">ROE <i id="sort_icon_roe" class="fa-solid fa-sort" style="font-size: 0.75rem; margin-left: 4px; opacity: 0.5;"></i></th>
+                                        <th onclick="sortScreenerTable('per')" style="cursor: pointer; user-select: none;">PE <i id="sort_icon_per" class="fa-solid fa-sort" style="font-size: 0.75rem; margin-left: 4px; opacity: 0.5;"></i></th>
+                                        <th onclick="sortScreenerTable('price_bv')" style="cursor: pointer; user-select: none;">PBV <i id="sort_icon_price_bv" class="fa-solid fa-sort" style="font-size: 0.75rem; margin-left: 4px; opacity: 0.5;"></i></th>
+                                        <th onclick="sortScreenerTable('de_ratio')" style="cursor: pointer; user-select: none;">D/E <i id="sort_icon_de_ratio" class="fa-solid fa-sort" style="font-size: 0.75rem; margin-left: 4px; opacity: 0.5;"></i></th>
+                                        <th onclick="sortScreenerTable('score')" style="cursor: pointer; user-select: none;">SMSS Score <i id="sort_icon_score" class="fa-solid fa-sort-down" style="font-size: 0.75rem; margin-left: 4px; color: var(--accent-gold);"></i></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="screenerTableBody">
+                                    <!-- Dynamic rows loaded here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Company Detail Drawer Column -->
+                    <div id="detailDrawer" class="workspace-detail glass-card">
+                        <div class="detail-header">
+                            <div>
+                                <span class="ticker-badge" id="detailTicker">AADI</span>
+                                <h2 id="detailName" style="font-size: 1.25rem; font-weight: 700; margin-top: 0.5rem;">PT Adaro Andalan Indonesia Tbk</h2>
+                                <p id="detailSector" style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.15rem;">Energy / Coal</p>
+                            </div>
+                            <button class="close-btn" onclick="closeDetailDrawer()"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+
+                        <!-- 3 Mini cards for top financials -->
+                        <div class="metrics-summary-grid">
+                            <div class="metric-mini-card">
+                                <span>ROE</span>
+                                <p id="detailRoe">0.0%</p>
+                            </div>
+                            <div class="metric-mini-card">
+                                <span>P/E Ratio</span>
+                                <p id="detailPe">0.0</p>
+                            </div>
+                            <div class="metric-mini-card">
+                                <span>Price / Book</span>
+                                <p id="detailPbv">0.0</p>
+                            </div>
+                        </div>
+
+                        <!-- Score breakdown -->
+                        <div class="score-breakdown">
+                            <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.75rem; display: flex; justify-content: space-between;">
+                                <span>SMSS Score Breakdown</span>
+                                <span id="detailTotalScore" style="color: var(--accent-gold); font-weight: 800;">85 / 100</span>
+                            </h3>
+                            
+                            <div class="score-breakdown-row">
+                                <span style="font-size: 0.8rem; color: var(--text-secondary);">Financial Health (40)</span>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 0.85rem; font-family: monospace;" id="detailScoreFinancial">35</span>
+                                    <div class="progress-bar-container">
+                                        <div class="progress-bar financial" id="detailBarFinancial" style="width: 85%;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="score-breakdown-row">
+                                <span style="font-size: 0.8rem; color: var(--text-secondary);">Valuation Discount (30)</span>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 0.85rem; font-family: monospace;" id="detailScoreValuation">25</span>
+                                    <div class="progress-bar-container">
+                                        <div class="progress-bar valuation" id="detailBarValuation" style="width: 83%;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="score-breakdown-row">
+                                <span style="font-size: 0.8rem; color: var(--text-secondary);">Network Leverage (30)</span>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 0.85rem; font-family: monospace;" id="detailScoreNetwork">25</span>
+                                    <div class="progress-bar-container">
+                                        <div class="progress-bar network" id="detailBarNetwork" style="width: 83%;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Vis.js network graph -->
+                        <h3 style="font-size: 0.9rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 1.5rem;">
+                            Corporate Relationship Graph
+                        </h3>
+                        <div class="network-graph-container" id="networkGraph">
+                            <div class="graph-legend">
+                                <div class="legend-item"><span class="legend-dot company"></span> Company</div>
+                                <div class="legend-item"><span class="legend-dot insider"></span> Insider</div>
+                                <div class="legend-item"><span class="legend-dot subsidiary"></span> Subsidiary</div>
+                            </div>
+                        </div>
+
+                        <!-- Accordion for board members and shareholders -->
+                        <div class="accordion-section">
+                            <div class="accordion-header">
+                                <span>Board & Executive Roster</span>
+                                <span id="detailBoardCount" style="font-size: 0.8rem; background: rgba(255, 255, 255, 0.05); padding: 0.1rem 0.4rem; border-radius: 4px;">0</span>
+                            </div>
+                            <div class="accordion-content" id="detailBoardList">
+                                <!-- Dynamic roster items -->
+                            </div>
+                        </div>
+
+                        <div class="accordion-section">
+                            <div class="accordion-header">
+                                <span>Top Registered Shareholders</span>
+                                <span id="detailShareholdersCount" style="font-size: 0.8rem; background: rgba(255, 255, 255, 0.05); padding: 0.1rem 0.4rem; border-radius: 4px;">0</span>
+                            </div>
+                            <div class="accordion-content" id="detailShareholdersList">
+                                <!-- Dynamic shareholder items -->
+                            </div>
+                        </div>
+
+                        <div class="accordion-section" id="detailSubsidiariesSection">
+                            <div class="accordion-header">
+                                <span>Corporate Subsidiaries</span>
+                                <span id="detailSubsidiariesCount" style="font-size: 0.8rem; background: rgba(255, 255, 255, 0.05); padding: 0.1rem 0.4rem; border-radius: 4px;">0</span>
+                            </div>
+                            <div class="accordion-content" id="detailSubsidiariesList">
+                                <!-- Dynamic subsidiary items -->
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- CHARTS & FLOW TAB -->
+            <div id="chartsTab" class="tab-panel">
+                <div class="glass-card" style="margin-bottom: 1.5rem;">
+                    <div style="display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+                        <div style="display: flex; gap: 1rem; align-items: center;">
+                            <label style="font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-magnifying-glass"></i> Stock Ticker:</label>
+                            <input type="text" id="chartTickerInput" class="form-control" style="width: 130px; text-transform: uppercase; font-weight: 700;" value="BBCA" placeholder="e.g. BBCA">
+                            <button class="nav-btn active" style="padding: 0.6rem 1.2rem; cursor: pointer;" onclick="loadStockChart()"><i class="fa-solid fa-arrows-rotate"></i> Load Chart</button>
+                        </div>
+                        <div id="chartHeaderInfo" style="display: flex; gap: 1.5rem; font-size: 0.95rem; align-items: center;">
+                            <span id="chartStockName" style="font-weight: 600; color: #fff;">Bank Central Asia Tbk.</span>
+                            <span id="chartPrice" style="color: var(--accent-green); font-weight: 700; font-family: 'JetBrains Mono', monospace;">Rp 9,850</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card" style="padding: 1.5rem; margin-bottom: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="font-size: 1.1rem; color: #fff;"><i class="fa-solid fa-chart-line" style="color: var(--accent-blue);"></i> Candlestick, Volume & Net Foreign Flow Overlay</h3>
+                        <span style="font-size: 0.8rem; color: var(--text-secondary);"><i class="fa-solid fa-bolt" style="color: var(--accent-gold);"></i> TradingView Lightweight Charts</span>
+                    </div>
+                    <div id="tvChartContainer" style="width: 100%; height: 480px; position: relative; border-radius: 12px; overflow: hidden; background: #070a13; border: 1px solid var(--panel-border);"></div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
+                    <div class="glass-card">
+                        <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: #fff;"><i class="fa-solid fa-gauge-high" style="color: var(--accent-green);"></i> Technical Momentum & Key Indicators</h3>
+                        <div id="chartTechSummary" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem;">
+                            <div style="background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
+                                <div style="font-size: 0.75rem; color: var(--text-secondary);">RSI (14)</div>
+                                <div id="techRsiVal" style="font-size: 1.2rem; font-weight: 700; color: var(--accent-blue);">58.4 (Neutral)</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
+                                <div style="font-size: 0.75rem; color: var(--text-secondary);">Trend Regime</div>
+                                <div id="techTrendVal" style="font-size: 1.2rem; font-weight: 700; color: var(--accent-green);">BULLISH</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
+                                <div style="font-size: 0.75rem; color: var(--text-secondary);">EMA-20 / EMA-50</div>
+                                <div id="techEmaVal" style="font-size: 1rem; font-weight: 600; color: #fff;">9,720 / 9,550</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
+                                <div style="font-size: 0.75rem; color: var(--text-secondary);">20-Day Volume Ratio</div>
+                                <div id="techVolRatio" style="font-size: 1.2rem; font-weight: 700; color: var(--accent-orange);">1.24x</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="glass-card">
+                        <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: #fff;"><i class="fa-solid fa-building-columns" style="color: var(--accent-purple);"></i> Bandarmology & Concentration Profile</h3>
+                        <div id="chartBrokerSummary" style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6;">
+                            <div style="margin-bottom: 0.5rem;"><strong style="color: #fff;">Top Buyer Brokers:</strong> <span style="color: var(--accent-green);">AK, BK, ZP (Institutional Accumulation)</span></div>
+                            <div style="margin-bottom: 0.5rem;"><strong style="color: #fff;">Top Seller Brokers:</strong> <span style="color: var(--accent-red);">YP, PD, XC (Retail Distribution)</span></div>
+                            <div><strong style="color: #fff;">CR3 Concentration:</strong> <span style="color: var(--accent-gold); font-weight: 700;">64.2%</span> of Total Session Turnover</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- INSIDERS TAB -->
+            <div id="insidersTab" class="tab-panel">
+                <div class="glass-card" style="margin-bottom: 2rem;">
+                    <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fa-solid fa-user-shield" style="color: var(--accent-green);"></i> Super Insider Tracker (Retail Tycoons)
+                    </h2>
+                    <p style="font-size: 0.9rem; color: var(--text-secondary); max-width: 900px;">
+                        This list identifies individual high-net-worth investors (excluding corporate proxies, government agencies, and bank nominees) 
+                        holding significant stakes in multiple listed companies. We estimate their portfolio values based on company equity valuations.
+                    </p>
+                </div>
+
+                <div class="insiders-grid" id="insidersGrid">
+                    <!-- Dynamic insider cards loaded here -->
+                </div>
+            </div>
+
+            <!-- CONGLOMERATES TAB -->
+            <div id="conglomeratesTab" class="tab-panel">
+                <div class="glass-card" style="margin-bottom: 2rem;">
+                    <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fa-solid fa-diagram-nested" style="color: var(--accent-purple);"></i> Corporate Conglomerates & Ownership Clusters
+                    </h2>
+                    <p style="font-size: 0.9rem; color: var(--text-secondary); max-width: 900px;">
+                        Conglomerates represent networks of multiple public companies sharing a single ultimate controlling corporate shareholder. 
+                        We measure the aggregate financial strength of the group by taking assets and median profitability.
+                    </p>
+                </div>
+
+                <div class="conglom-grid" id="conglomGrid">
+                    <!-- Dynamic conglomerate cards loaded here -->
+                </div>
+            </div>
+
+            <!-- METHODOLOGY TAB -->
+            <div id="methodologyTab" class="tab-panel">
+                <div class="methodology-container">
+                    <div class="methodology-section">
+                        <h2><i class="fa-solid fa-calculator"></i> Smart Money Synergy Score (SMSS)</h2>
+                        <p>
+                            The SMSS is a quantitative rating out of 100 points developed to identify high-probability, undervalued companies 
+                            supported by strong corporate governance, interlocking board networks, and legendary investor alignments.
+                        </p>
+                        <p>
+                            Traditional stock screening processes look at financial statistics in isolation. In emerging stock exchanges like the IDX, 
+                            who runs the company, who sits on the board, and which tycoon owns the float are often as critical as current earnings.
+                        </p>
+                    </div>
+
+                    <div class="methodology-section">
+                        <h2><i class="fa-solid fa-list-check"></i> Score Weights and Criteria</h2>
+                        <div class="factor-list">
+                            <div class="factor-item">
+                                <div class="factor-score">40</div>
+                                <div class="factor-details">
+                                    <h4>Financial Quality & Solvency (Max 40 points)</h4>
+                                    <p>Screens for fundamental strength, high margins, and conservative leverage:</p>
+                                    <ul>
+                                        <li><strong>Return on Equity (ROE)</strong>: ROE &ge; 20% (+15 pts), &ge; 15% (+10 pts), &ge; 10% (+5 pts). ROE &lt; 0% deducts 10 pts.</li>
+                                        <li><strong>Debt-to-Equity (D/E) Ratio</strong>: Conservative debt level. D/E &le; 0.5 (+15 pts), &le; 1.0 (+10 pts), &le; 2.0 (+5 pts).</li>
+                                        <li><strong>Net Profit Margin (NPM)</strong>: High pricing power. NPM &ge; 20% (+10 pts), &ge; 10% (+7 pts), &ge; 5% (+3 pts).</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="factor-item">
+                                <div class="factor-score valuation">30</div>
+                                <div class="factor-details">
+                                    <h4>Valuation Discounts (Max 30 points)</h4>
+                                    <p>Ensures that you are buying quality at a reasonable price, avoiding overpriced growth traps:</p>
+                                    <ul>
+                                        <li><strong>Price-to-Earnings (P/E) Ratio</strong>: Positive P/E &lt; 10 (+15 pts), 10 to 15 (+10 pts), 15 to 25 (+5 pts).</li>
+                                        <li><strong>Price-to-Book (P/B) Ratio</strong>: Asset discount. PBV &lt; 1.0 (+15 pts), 1.0 to 1.5 (+10 pts), 1.5 to 3.0 (+5 pts).</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="factor-item">
+                                <div class="factor-score network">30</div>
+                                <div class="factor-details">
+                                    <h4>Network Leverage & Insiders (Max 30 points)</h4>
+                                    <p>Measures corporate governance quality, network synergy, and insider alignment:</p>
+                                    <ul>
+                                        <li><strong>Blue-Chip Bridge (+12 points)</strong>: Added if a company shares at least one director or commissioner with a Blue Chip company (like BBCA, ASII, TLKM). Serves as a proxy for talent pool and board pedigree.</li>
+                                        <li><strong>Super-Insider Conviction (+10 points)</strong>: Added if an individual retail tycoon (e.g. Lo Kheng Hong) holds &ge; 1.0% stake. Retail billionaires usually perform intensive research and verify management integrity before investing.</li>
+                                        <li><strong>Conglomerate Synergy (+8 points)</strong>: Added if a company is controlled by an active conglomerate group whose member firms have a median ROE &ge; 15% (showing strong operational management at group level).</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <footer>
+        <p>Smart Money & Network Alpha Finder &copy; 2026. Made for IDX-BEI investment research. Always perform your own due diligence.</p>
+    </footer>
+
+    <script type="text/javascript" src="js/chart.js"></script>
+    <script type="text/javascript" src="js/network.js"></script>
+    <script type="text/javascript" src="js/app.js"></script>
+</body>
+</html>

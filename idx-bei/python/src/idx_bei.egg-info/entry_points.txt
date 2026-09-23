@@ -1,0 +1,2 @@
+[console_scripts]
+idx = idx.cli:main
