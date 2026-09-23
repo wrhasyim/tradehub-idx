@@ -30,13 +30,15 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     Route::post('/upgrade/process', [SubscriptionController::class, 'process'])->name('upgrade.process');
-// Endpoint untuk mengambil data OHLCV Chart
-Route::get('/api/chart/{code}', [ChartDataController::class, 'getOhlcvData'])->name('api.chart.data');
+
     // Trading Journal Routes
     Route::get('/journal', [JournalController::class, 'index'])->name('journal.index');
     Route::post('/journal', [JournalController::class, 'store'])->name('journal.store');
     Route::delete('/journal/{journal}', [JournalController::class, 'destroy'])->name('journal.destroy');
 });
+
+// Endpoint untuk mengambil data OHLCV Chart (Bisa diakses publik, logika VIP diatur di controller)
+Route::get('/api/chart/{code}', [ChartDataController::class, 'getOhlcvData'])->name('api.chart.data');
 
 Route::get('/terminal', function () {
     return view('terminal.index');

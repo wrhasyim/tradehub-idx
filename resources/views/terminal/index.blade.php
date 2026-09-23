@@ -2,6 +2,9 @@
     <!-- Load Library -->
     <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    
+    <!-- Load Modul SMC PRO Eksternal -->
+    <script src="{{ asset('js/smc.js') }}"></script>
 
     @php
         $userRole = strtolower(auth()->user()->role ?? 'regular');
@@ -69,7 +72,28 @@
             <!-- Kontainer Chart -->
             <div class="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-1 relative">
                 <div id="toast" class="absolute top-4 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2 bg-zinc-800 border border-zinc-700 text-white rounded shadow-lg text-xs font-bold"></div>
-                <div id="tvchart" style="width: 100%; height: 85vh; min-height: 650px;" class="rounded-lg overflow-hidden"></div>
+                
+                <!-- 1. Wadah TradingView (User Regular) -->
+                <div id="tv-container" style="width: 100%; height: 85vh; min-height: 650px;" class="rounded-lg overflow-hidden"></div>
+                
+                <!-- 2. Wadah Tradehub Chart (User VIP) -->
+                <div id="lw-container" style="width: 100%; height: 85vh; min-height: 650px;" class="rounded-lg overflow-hidden hidden"></div>
+
+                <!-- 3. Wadah PAYWALL / LAYAR TERKUNCI (Jika Regular klik Tradehub Chart) -->
+                <div id="paywall-container" style="width: 100%; height: 85vh; min-height: 650px;" class="hidden flex-col items-center justify-center bg-zinc-950 rounded-lg border-2 border-dashed border-zinc-800">
+                    <div class="p-4 bg-amber-500/10 rounded-full mb-6">
+                        <svg class="w-16 h-16 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-2xl font-black text-white mb-2 tracking-wide">FITUR EKSKLUSIF VIP</h3>
+                    <p class="text-sm text-zinc-400 mb-8 text-center max-w-md leading-relaxed">
+                        Akses penuh ke <strong class="text-white">Tradehub Chart</strong> dengan indikator <em>Smart Money Concepts (SMC)</em>, pergerakan real-time, dan rotasi sektor khusus untuk Member VIP.
+                    </p>
+                    <a href="{{ route('dashboard') }}" class="px-8 py-3 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold rounded-lg transition-colors shadow-[0_0_20px_rgba(245,158,11,0.3)]">
+                        Upgrade ke VIP Sekarang
+                    </a>
+                </div>
             </div>
 
         </div>
@@ -94,9 +118,15 @@
         }
 
         function renderTvWidget(symbolCode) {
-            document.getElementById('tvchart').innerHTML = '';
+            document.getElementById('lw-container').classList.add('hidden');
+            document.getElementById('paywall-container').classList.add('hidden');
+            document.getElementById('paywall-container').classList.remove('flex');
+            document.getElementById('tv-container').classList.remove('hidden');
+            
             document.getElementById('smcWrapper').classList.add('hidden'); 
             document.getElementById('btnSnapshot').classList.add('hidden');
+
+            document.getElementById('tv-container').innerHTML = '';
 
             tvWidget = new TradingView.widget({
                 "autosize": true,
@@ -115,31 +145,35 @@
                 "hide_side_toolbar": false, 
                 "allow_symbol_change": false, 
                 "details": true,
-                "container_id": "tvchart",
+                "container_id": "tv-container",
                 "toolbar_bg": "#18181b",
                 "disabled_features": ["header_symbol_search"]
             });
         }
 
         function renderCustomChart(symbolCode) {
-            document.getElementById('tvchart').innerHTML = '';
+            document.getElementById('tv-container').classList.add('hidden');
+            document.getElementById('paywall-container').classList.add('hidden');
+            document.getElementById('paywall-container').classList.remove('flex');
+            document.getElementById('lw-container').classList.remove('hidden');
             
             if (isPremiumUser) {
                 document.getElementById('smcWrapper').classList.remove('hidden');
-            } else {
-                document.getElementById('smcWrapper').classList.add('hidden');
             }
             
             document.getElementById('btnSnapshot').classList.remove('hidden');
 
-            customChart = LightweightCharts.createChart(document.getElementById('tvchart'), {
+            if (customChart) {
+                customChart.remove();
+                customChart = null;
+            }
+
+            customChart = LightweightCharts.createChart(document.getElementById('lw-container'), {
+                autoSize: true,
                 layout: { background: { type: 'solid', color: '#09090b' }, textColor: '#a1a1aa' },
                 grid: { vertLines: { color: '#27272a' }, horzLines: { color: '#27272a' } },
                 crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-                rightPriceScale: { 
-                    borderColor: '#27272a',
-                    scaleMargins: { top: 0.1, bottom: 0.2 } 
-                },
+                rightPriceScale: { borderColor: '#27272a', scaleMargins: { top: 0.1, bottom: 0.2 } },
                 timeScale: { borderColor: '#27272a', timeVisible: true }
             });
 
@@ -155,9 +189,7 @@
                 priceScaleId: 'volume',
             });
 
-            customChart.priceScale('volume').applyOptions({
-                scaleMargins: { top: 0.8, bottom: 0 },
-            });
+            customChart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
 
             fetchDataFromController(symbolCode);
         }
@@ -165,12 +197,11 @@
         async function fetchDataFromController(code) {
             showToast("Memuat data pasar...", "success");
             try {
-                const response = await fetch(`/api/chart-data/${code}`);
+                const response = await fetch(`/api/chart/${code}`);
                 
-                // Cek apakah server mengembalikan respons JSON yang valid (mencegah SyntaxError 404 HTML)
                 const contentType = response.headers.get("content-type");
                 if (!contentType || !contentType.includes("application/json")) {
-                    throw new Error("Endpoint API tidak ditemukan (404) atau server error.");
+                    throw new Error("Endpoint API tidak ditemukan.");
                 }
 
                 const result = await response.json();
@@ -180,31 +211,19 @@
                     return;
                 }
 
-                // Konversi milidetik ke detik untuk Lightweight Charts
                 const formattedData = result.data.map(item => ({
-                    time: Math.floor(item.time / 1000),
-                    open: item.open,
-                    high: item.high,
-                    low: item.low,
-                    close: item.close,
-                    volume: item.volume
+                    time: Math.floor(item.time / 1000), open: item.open, high: item.high, low: item.low, close: item.close, volume: item.volume
                 }));
 
                 customRawData = formattedData;
                 candleSeries.setData(formattedData);
                 volumeSeries.setData(formattedData.map(d => ({
-                    time: d.time, 
-                    value: d.volume, 
-                    color: d.close > d.open ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)' 
+                    time: d.time, value: d.volume, color: d.close > d.open ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)' 
                 })));
 
-                // BATASAN TAMPILAN AWAL: Hanya tampilkan 50 candle terakhir agar rapi dan tidak kecil
                 const visibleBars = 50;
                 const fromIdx = Math.max(0, formattedData.length - visibleBars);
-                customChart.timeScale().setVisibleLogicalRange({
-                    from: fromIdx,
-                    to: formattedData.length - 1
-                });
+                customChart.timeScale().setVisibleLogicalRange({ from: fromIdx, to: formattedData.length - 1 });
 
                 applySmcState();
             } catch (err) {
@@ -213,58 +232,33 @@
             }
         }
 
-        function calculateSmartMoneyConcepts(data) {
-            let markers = [];
-            if (data.length < 10) return markers;
-
-            let lastSwingHigh = -1;
-            let lastSwingLow = -1;
-            let trend = 'neutral';
-
-            for (let i = 2; i < data.length - 2; i++) {
-                const curr = data[i];
-                const prev1 = data[i-1], prev2 = data[i-2];
-                const next1 = data[i+1], next2 = data[i+2];
-
-                if (curr.high > prev1.high && curr.high > prev2.high && curr.high > next1.high && curr.high > next2.high) {
-                    if (lastSwingHigh !== -1 && curr.close > data[lastSwingHigh].high) {
-                        if (trend === 'bullish' || trend === 'neutral') {
-                            markers.push({ time: curr.time, position: 'aboveBar', color: '#3b82f6', shape: 'arrowDown', text: 'BOS' });
-                            trend = 'bullish';
-                        }
-                    } else if (lastSwingHigh !== -1 && curr.close < data[lastSwingHigh].high && trend === 'bullish') {
-                        markers.push({ time: curr.time, position: 'aboveBar', color: '#ef4444', shape: 'arrowDown', text: 'CHoCH' });
-                        trend = 'bearish';
-                    }
-                    lastSwingHigh = i;
-                }
-
-                if (curr.low < prev1.low && curr.low < prev2.low && curr.low < next1.low && curr.low < next2.low) {
-                    if (lastSwingLow !== -1 && curr.close < data[lastSwingLow].low) {
-                        if (trend === 'bearish' || trend === 'neutral') {
-                            markers.push({ time: curr.time, position: 'belowBar', color: '#f59e0b', shape: 'arrowUp', text: 'BOS' });
-                            trend = 'bearish';
-                        }
-                    } else if (lastSwingLow !== -1 && curr.close > data[lastSwingLow].low && trend === 'bearish') {
-                        markers.push({ time: curr.time, position: 'belowBar', color: '#10b981', shape: 'arrowUp', text: 'CHoCH' });
-                        trend = 'bullish';
-                    }
-                    lastSwingLow = i;
-                }
-            }
-            return markers;
-        }
-
+        // Fungsi Master Switch SMC PRO
+        // Fungsi Master Switch SMC PRO (Diperbarui untuk Ultimate Suite)
         function applySmcState() {
             const btnSMC = document.getElementById('toggleSMC');
+            
             if (smcActive && customRawData.length > 0) {
-                const smcMarkers = calculateSmartMoneyConcepts(customRawData);
-                candleSeries.setMarkers(smcMarkers);
+                // Jalankan Ultimate SMC Suite dari public/js/smc.js (Satu fungsi terpadu)
+                if (typeof applySmartMoneyConcepts === "function") {
+                    applySmartMoneyConcepts(customRawData, customChart, candleSeries);
+                }
                 
+                // Ubah Tombol jadi ON
                 btnSMC.textContent = "SMC PRO : ON";
                 btnSMC.className = "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-600 text-white border border-indigo-500 shadow";
             } else {
-                candleSeries.setMarkers([]);
+                // Matikan Semua Fitur SMC (Bersihkan Chart)
+                candleSeries.setMarkers([]); // Hapus marker BOS & CHoCH
+                
+                // Hapus Plugin Canvas Zona (OB, FVG, dan Garis S/R)
+                if (typeof currentSmcPlugin !== 'undefined' && currentSmcPlugin !== null) {
+                    if (typeof candleSeries.detachPrimitive === 'function') {
+                        try { candleSeries.detachPrimitive(currentSmcPlugin); } catch(e) {}
+                    }
+                    currentSmcPlugin = null;
+                }
+                
+                // Ubah Tombol jadi OFF
                 btnSMC.textContent = "SMC PRO : OFF";
                 btnSMC.className = "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-900/40 text-indigo-400 border border-indigo-700/50 hover:bg-indigo-800/50 transition-colors";
             }
@@ -280,9 +274,9 @@
 
         document.addEventListener("DOMContentLoaded", () => {
             const stockInput = document.getElementById('stockCode');
-            
             renderTvWidget(stockInput.value);
 
+            // Listener Tombol TradingView
             document.getElementById('modeTv').addEventListener('click', function() {
                 currentMode = 'tv';
                 this.className = "px-3 py-1 text-xs font-bold rounded bg-amber-500 text-zinc-950 transition-all";
@@ -290,14 +284,24 @@
                 executeLoad(stockInput.value.toUpperCase().trim());
             });
 
+            // Listener Tombol Tradehub Chart (Logika Paywall ditaruh di sini)
             document.getElementById('modeCustom').addEventListener('click', function() {
-                if (!isPremiumUser) {
-                    showToast("Tradehub Chart & SMC khusus akun VIP/Superadmin!", "error");
-                    return;
-                }
-                currentMode = 'custom';
                 this.className = "px-3 py-1 text-xs font-bold rounded bg-amber-500 text-zinc-950 transition-all";
                 document.getElementById('modeTv').className = "px-3 py-1 text-xs font-bold rounded text-zinc-400 hover:text-white transition-all";
+                
+                if (!isPremiumUser) {
+                    // Munculkan layar gembok, sembunyikan chart
+                    document.getElementById('tv-container').classList.add('hidden');
+                    document.getElementById('lw-container').classList.add('hidden');
+                    document.getElementById('paywall-container').classList.remove('hidden');
+                    document.getElementById('paywall-container').classList.add('flex');
+                    
+                    document.getElementById('smcWrapper').classList.add('hidden');
+                    document.getElementById('btnSnapshot').classList.add('hidden');
+                    return; // Stop eksekusi chart
+                }
+                
+                currentMode = 'custom';
                 executeLoad(stockInput.value.toUpperCase().trim());
             });
 
@@ -317,21 +321,19 @@
                 }
             });
 
-            document.getElementById('toggleSMC' ).addEventListener('click', () => {
+            document.getElementById('toggleSMC').addEventListener('click', () => {
                 smcActive = !smcActive;
                 applySmcState();
             });
 
             document.getElementById('btnSnapshot').addEventListener('click', () => {
-                const canvas = document.querySelector('#tvchart canvas');
+                const canvas = document.querySelector('#lw-container canvas');
                 if (canvas) {
                     const link = document.createElement('a');
                     link.download = `Tradehub-${stockInput.value.toUpperCase()}.png`;
                     link.href = canvas.toDataURL('image/png');
                     link.click();
                     showToast("Snapshot chart berhasil diunduh!", "success");
-                } else {
-                    showToast("Gagal mengambil gambar chart.", "error");
                 }
             });
         });
