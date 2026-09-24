@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Money & Network Alpha Finder</title>
+    <title>Tradehub - IDX Intelligence Terminal</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,25 +13,80 @@
     <!-- Vis-Network for Graph Visualization -->
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <!-- TradingView Lightweight Charts -->
-    <script type="text/javascript" src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-    <!-- Fallback dataset for direct file:// or nested path browser loading -->
-    <script type="text/javascript" src="../data/network_alpha_data.js"></script>
-    <script type="text/javascript" src="data/network_alpha_data.js"></script>
-    <script type="text/javascript" src="network_alpha_data.js"></script>
+    <script type="text/javascript" src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     
     <link rel="stylesheet" href="css/style.css">
+    <style>
+        :root {
+            /* Menyesuaikan warna dengan hex logo Om (#ff9900) */
+            --accent-orange: #ff9900;
+            --accent-gold: #ffb84d;
+            --accent-blue: #ff9900; 
+            --accent-blue-glow: rgba(255, 153, 0, 0.35);
+        }
+        
+        /* Desain Logo Hasil Konversi Tailwind ke CSS Murni */
+        .tradehub-logo-text {
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 1.5rem;
+            letter-spacing: -0.025em;
+        }
+        .tradehub-logo-box {
+            background-color: #ff9900;
+            color: #000000;
+            padding: 0.125rem 0.5rem;
+            border-radius: 0.375rem;
+            margin-left: 0.25rem;
+            font-size: 1.125rem;
+            font-weight: 700;
+        }
+
+        header {
+            background: rgba(11, 14, 20, 0.95) !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+            padding: 1rem 2rem !important;
+        }
+
+        .nav-btn.active {
+            color: #ff9900 !important;
+            background: rgba(255, 153, 0, 0.15) !important;
+            border: 1px solid rgba(255, 153, 0, 0.3) !important;
+            box-shadow: 0 4px 15px rgba(255, 153, 0, 0.15) !important;
+        }
+
+        .nav-btn:hover {
+            color: #ffb84d !important;
+        }
+
+        .ticker-badge {
+            background: rgba(255, 153, 0, 0.15) !important;
+            color: #ff9900 !important;
+            border: 1px solid rgba(255, 153, 0, 0.3) !important;
+        }
+
+        .form-control:focus {
+            border-color: #ff9900 !important;
+            box-shadow: 0 0 10px rgba(255, 153, 0, 0.3) !important;
+        }
+    </style>
 </head>
 <body>
 
     <header>
-        <div class="logo-container">
-            <i class="fa-solid fa-circle-nodes"></i>
-            <h1>Smart Money & Network Alpha Finder</h1>
-            <span>IDX/BEI Edition</span>
-        </div>
+        <!-- Versi HTML + CSS Biasa (Tanpa Tailwind) -->
+<div style="display: flex; align-items: center; flex-shrink: 0;">
+    <a href="#" style="display: flex; align-items: center; cursor: pointer; user-select: none; text-decoration: none;">
+        <span style="font-weight: bold; font-size: 1.5rem; letter-spacing: -0.025em; display: flex; align-items: center;">
+            <span style="color: white;">Trade</span>
+            <span style="background-color: #ff9900; color: black; padding: 2px 8px; border-radius: 0.375rem; margin-left: 4px; font-size: 1.125rem;">hub</span>
+        </span>
+    </a>
+</div>
+
         <nav>
             <button class="nav-btn active" onclick="switchTab('screener')">
-                <i class="fa-solid fa-filter-list"></i> Stock Screener
+                <i class="fa-solid fa-chart-pie"></i> Dashboard
             </button>
             <button class="nav-btn" onclick="switchTab('charts')">
                 <i class="fa-solid fa-chart-candlestick"></i> Charts & Flow
@@ -46,9 +101,15 @@
                 <i class="fa-solid fa-book-bookmark"></i> Methodology
             </button>
         </nav>
-        <div id="wsBadge" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; padding: 0.35rem 0.75rem; border-radius: 9999px;">
-            <i class="fa-solid fa-circle-dot"></i>
-            <span id="wsStatusText">Live Feed: Initializing...</span>
+
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <div id="wsBadge" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; background: rgba(255, 153, 0, 0.1); border: 1px solid rgba(255, 153, 0, 0.3); color: #ff9900; padding: 0.35rem 0.75rem; border-radius: 9999px;">
+                <i class="fa-solid fa-circle-dot"></i>
+                <span id="wsStatusText">Live Feed: Connected</span>
+            </div>
+            <div style="font-weight: 600; color: #fff; font-size: 0.9rem; background: rgba(255,255,255,0.05); padding: 0.3rem 0.8rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
+                Eja <i class="fa-solid fa-chevron-down" style="font-size: 0.7rem; margin-left: 4px; color: #9ca3af;"></i>
+            </div>
         </div>
     </header>
 
@@ -70,7 +131,7 @@
                 <!-- Stats Row -->
                 <div class="stats-grid">
                     <div class="glass-card stat-card">
-                        <div class="stat-icon blue"><i class="fa-solid fa-building"></i></div>
+                        <div class="stat-icon blue" style="background: rgba(255, 153, 0, 0.15); color: #ff9900; border: 1px solid rgba(255, 153, 0, 0.3);"><i class="fa-solid fa-building"></i></div>
                         <div class="stat-info">
                             <h3>Total Screened</h3>
                             <p id="statTotalCompanies">0</p>
@@ -104,7 +165,7 @@
                     <!-- Screener Table Column -->
                     <div class="workspace-main glass-card">
                         <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
-                            <i class="fa-solid fa-bolt" style="color: var(--accent-gold);"></i> Smart Money Synergy Screener
+                            <i class="fa-solid fa-bolt" style="color: #ff9900;"></i> Smart Money Synergy Screener
                         </h2>
                         
                         <div class="filter-bar">
@@ -146,7 +207,7 @@
                                         <th onclick="sortScreenerTable('per')" style="cursor: pointer; user-select: none;">PE <i id="sort_icon_per" class="fa-solid fa-sort" style="font-size: 0.75rem; margin-left: 4px; opacity: 0.5;"></i></th>
                                         <th onclick="sortScreenerTable('price_bv')" style="cursor: pointer; user-select: none;">PBV <i id="sort_icon_price_bv" class="fa-solid fa-sort" style="font-size: 0.75rem; margin-left: 4px; opacity: 0.5;"></i></th>
                                         <th onclick="sortScreenerTable('de_ratio')" style="cursor: pointer; user-select: none;">D/E <i id="sort_icon_de_ratio" class="fa-solid fa-sort" style="font-size: 0.75rem; margin-left: 4px; opacity: 0.5;"></i></th>
-                                        <th onclick="sortScreenerTable('score')" style="cursor: pointer; user-select: none;">SMSS Score <i id="sort_icon_score" class="fa-solid fa-sort-down" style="font-size: 0.75rem; margin-left: 4px; color: var(--accent-gold);"></i></th>
+                                        <th onclick="sortScreenerTable('score')" style="cursor: pointer; user-select: none;">SMSS Score <i id="sort_icon_score" class="fa-solid fa-sort-down" style="font-size: 0.75rem; margin-left: 4px; color: #ff9900;"></i></th>
                                     </tr>
                                 </thead>
                                 <tbody id="screenerTableBody">
@@ -187,7 +248,7 @@
                         <div class="score-breakdown">
                             <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.75rem; display: flex; justify-content: space-between;">
                                 <span>SMSS Score Breakdown</span>
-                                <span id="detailTotalScore" style="color: var(--accent-gold); font-weight: 800;">85 / 100</span>
+                                <span id="detailTotalScore" style="color: #ff9900; font-weight: 800;">85 / 100</span>
                             </h3>
                             
                             <div class="score-breakdown-row">
@@ -195,7 +256,7 @@
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <span style="font-size: 0.85rem; font-family: monospace;" id="detailScoreFinancial">35</span>
                                     <div class="progress-bar-container">
-                                        <div class="progress-bar financial" id="detailBarFinancial" style="width: 85%;"></div>
+                                        <div class="progress-bar financial" id="detailBarFinancial" style="width: 85%; background: #ff9900;"></div>
                                     </div>
                                 </div>
                             </div>
@@ -272,33 +333,43 @@
             <div id="chartsTab" class="tab-panel">
                 <div class="glass-card" style="margin-bottom: 1.5rem;">
                     <div style="display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap;">
-                        <div style="display: flex; gap: 1rem; align-items: center;">
-                            <label style="font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-magnifying-glass"></i> Stock Ticker:</label>
-                            <input type="text" id="chartTickerInput" class="form-control" style="width: 130px; text-transform: uppercase; font-weight: 700;" value="BBCA" placeholder="e.g. BBCA">
-                            <button class="nav-btn active" style="padding: 0.6rem 1.2rem; cursor: pointer;" onclick="loadStockChart()"><i class="fa-solid fa-arrows-rotate"></i> Load Chart</button>
+                        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                            <label style="font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-magnifying-glass"></i> Ticker:</label>
+                            
+                            <input type="text" id="chartTickerInput" class="form-control" style="width: 100px; text-transform: uppercase; font-weight: 700;" value="BBCA" placeholder="BBCA" onkeypress="if(event.key === 'Enter') loadStockChart()">
+                            
+                            <div style="display: flex; gap: 0.25rem; background: rgba(255,255,255,0.05); padding: 0.25rem; border-radius: 6px;">
+                                <button class="tf-btn" data-tf="1m" onclick="setTimeframe('1m')" style="background:transparent; color:var(--text-secondary); border:none; border-radius:4px; padding:0.2rem 0.5rem; cursor:pointer; font-size:0.8rem;">1m</button>
+                                <button class="tf-btn" data-tf="5m" onclick="setTimeframe('5m')" style="background:transparent; color:var(--text-secondary); border:none; border-radius:4px; padding:0.2rem 0.5rem; cursor:pointer; font-size:0.8rem;">5m</button>
+                                <button class="tf-btn" data-tf="15m" onclick="setTimeframe('15m')" style="background:transparent; color:var(--text-secondary); border:none; border-radius:4px; padding:0.2rem 0.5rem; cursor:pointer; font-size:0.8rem;">15m</button>
+                                <button class="tf-btn" data-tf="1h" onclick="setTimeframe('1h')" style="background:transparent; color:var(--text-secondary); border:none; border-radius:4px; padding:0.2rem 0.5rem; cursor:pointer; font-size:0.8rem;">1H</button>
+                                <button class="tf-btn active" data-tf="1d" onclick="setTimeframe('1d')" style="background:#ff9900; color:#000; border:none; border-radius:4px; padding:0.2rem 0.5rem; cursor:pointer; font-size:0.8rem; font-weight:bold;">1D</button>
+                                <button class="tf-btn" data-tf="1w" onclick="setTimeframe('1w')" style="background:transparent; color:var(--text-secondary); border:none; border-radius:4px; padding:0.2rem 0.5rem; cursor:pointer; font-size:0.8rem;">1W</button>
+                                <button class="tf-btn" data-tf="1M" onclick="setTimeframe('1M')" style="background:transparent; color:var(--text-secondary); border:none; border-radius:4px; padding:0.2rem 0.5rem; cursor:pointer; font-size:0.8rem;">1Mo</button>
+                            </div>
                         </div>
-                        <div id="chartHeaderInfo" style="display: flex; gap: 1.5rem; font-size: 0.95rem; align-items: center;">
+                        <div id="chartHeaderInfo" style="display: flex; gap: 1rem; font-size: 0.95rem; align-items: center;">
                             <span id="chartStockName" style="font-weight: 600; color: #fff;">Bank Central Asia Tbk.</span>
-                            <span id="chartPrice" style="color: var(--accent-green); font-weight: 700; font-family: 'JetBrains Mono', monospace;">Rp 9,850</span>
+                            <span id="chartAnnotations" style="display: flex; gap: 4px;"></span>
                         </div>
                     </div>
                 </div>
 
                 <div class="glass-card" style="padding: 1.5rem; margin-bottom: 1.5rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                        <h3 style="font-size: 1.1rem; color: #fff;"><i class="fa-solid fa-chart-line" style="color: var(--accent-blue);"></i> Candlestick, Volume & Net Foreign Flow Overlay</h3>
-                        <span style="font-size: 0.8rem; color: var(--text-secondary);"><i class="fa-solid fa-bolt" style="color: var(--accent-gold);"></i> TradingView Lightweight Charts</span>
+                        <h3 style="font-size: 1.1rem; color: #fff;"><i class="fa-solid fa-chart-line" style="color: #ff9900;"></i> Candlestick, Volume & Net Foreign Flow Overlay</h3>
+                        <span style="font-size: 0.8rem; color: var(--text-secondary);"><i class="fa-solid fa-bolt" style="color: #ff9900;"></i> TradingView Lightweight Charts</span>
                     </div>
                     <div id="tvChartContainer" style="width: 100%; height: 480px; position: relative; border-radius: 12px; overflow: hidden; background: #070a13; border: 1px solid var(--panel-border);"></div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
                     <div class="glass-card">
-                        <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: #fff;"><i class="fa-solid fa-gauge-high" style="color: var(--accent-green);"></i> Technical Momentum & Key Indicators</h3>
+                        <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: #fff;"><i class="fa-solid fa-gauge-high" style="color: #10b981;"></i> Technical Momentum & Key Indicators</h3>
                         <div id="chartTechSummary" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem;">
                             <div style="background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
                                 <div style="font-size: 0.75rem; color: var(--text-secondary);">RSI (14)</div>
-                                <div id="techRsiVal" style="font-size: 1.2rem; font-weight: 700; color: var(--accent-blue);">58.4 (Neutral)</div>
+                                <div id="techRsiVal" style="font-size: 1.2rem; font-weight: 700; color: #ff9900;">58.4 (Neutral)</div>
                             </div>
                             <div style="background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
                                 <div style="font-size: 0.75rem; color: var(--text-secondary);">Trend Regime</div>
@@ -310,16 +381,16 @@
                             </div>
                             <div style="background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
                                 <div style="font-size: 0.75rem; color: var(--text-secondary);">20-Day Volume Ratio</div>
-                                <div id="techVolRatio" style="font-size: 1.2rem; font-weight: 700; color: var(--accent-orange);">1.24x</div>
+                                <div id="techVolRatio" style="font-size: 1.2rem; font-weight: 700; color: #ffb84d;">1.24x</div>
                             </div>
                         </div>
                     </div>
                     <div class="glass-card">
-                        <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: #fff;"><i class="fa-solid fa-building-columns" style="color: var(--accent-purple);"></i> Bandarmology & Concentration Profile</h3>
+                        <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: #fff;"><i class="fa-solid fa-building-columns" style="color: #8b5cf6;"></i> Bandarmology & Concentration Profile</h3>
                         <div id="chartBrokerSummary" style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6;">
                             <div style="margin-bottom: 0.5rem;"><strong style="color: #fff;">Top Buyer Brokers:</strong> <span style="color: var(--accent-green);">AK, BK, ZP (Institutional Accumulation)</span></div>
                             <div style="margin-bottom: 0.5rem;"><strong style="color: #fff;">Top Seller Brokers:</strong> <span style="color: var(--accent-red);">YP, PD, XC (Retail Distribution)</span></div>
-                            <div><strong style="color: #fff;">CR3 Concentration:</strong> <span style="color: var(--accent-gold); font-weight: 700;">64.2%</span> of Total Session Turnover</div>
+                            <div><strong style="color: #fff;">CR3 Concentration:</strong> <span style="color: #ff9900; font-weight: 700;">64.2%</span> of Total Session Turnover</div>
                         </div>
                     </div>
                 </div>
@@ -368,53 +439,6 @@
                             The SMSS is a quantitative rating out of 100 points developed to identify high-probability, undervalued companies 
                             supported by strong corporate governance, interlocking board networks, and legendary investor alignments.
                         </p>
-                        <p>
-                            Traditional stock screening processes look at financial statistics in isolation. In emerging stock exchanges like the IDX, 
-                            who runs the company, who sits on the board, and which tycoon owns the float are often as critical as current earnings.
-                        </p>
-                    </div>
-
-                    <div class="methodology-section">
-                        <h2><i class="fa-solid fa-list-check"></i> Score Weights and Criteria</h2>
-                        <div class="factor-list">
-                            <div class="factor-item">
-                                <div class="factor-score">40</div>
-                                <div class="factor-details">
-                                    <h4>Financial Quality & Solvency (Max 40 points)</h4>
-                                    <p>Screens for fundamental strength, high margins, and conservative leverage:</p>
-                                    <ul>
-                                        <li><strong>Return on Equity (ROE)</strong>: ROE &ge; 20% (+15 pts), &ge; 15% (+10 pts), &ge; 10% (+5 pts). ROE &lt; 0% deducts 10 pts.</li>
-                                        <li><strong>Debt-to-Equity (D/E) Ratio</strong>: Conservative debt level. D/E &le; 0.5 (+15 pts), &le; 1.0 (+10 pts), &le; 2.0 (+5 pts).</li>
-                                        <li><strong>Net Profit Margin (NPM)</strong>: High pricing power. NPM &ge; 20% (+10 pts), &ge; 10% (+7 pts), &ge; 5% (+3 pts).</li>
-                                    </ul>
-                                </div>
-                            </div>
-                            
-                            <div class="factor-item">
-                                <div class="factor-score valuation">30</div>
-                                <div class="factor-details">
-                                    <h4>Valuation Discounts (Max 30 points)</h4>
-                                    <p>Ensures that you are buying quality at a reasonable price, avoiding overpriced growth traps:</p>
-                                    <ul>
-                                        <li><strong>Price-to-Earnings (P/E) Ratio</strong>: Positive P/E &lt; 10 (+15 pts), 10 to 15 (+10 pts), 15 to 25 (+5 pts).</li>
-                                        <li><strong>Price-to-Book (P/B) Ratio</strong>: Asset discount. PBV &lt; 1.0 (+15 pts), 1.0 to 1.5 (+10 pts), 1.5 to 3.0 (+5 pts).</li>
-                                    </ul>
-                                </div>
-                            </div>
-                            
-                            <div class="factor-item">
-                                <div class="factor-score network">30</div>
-                                <div class="factor-details">
-                                    <h4>Network Leverage & Insiders (Max 30 points)</h4>
-                                    <p>Measures corporate governance quality, network synergy, and insider alignment:</p>
-                                    <ul>
-                                        <li><strong>Blue-Chip Bridge (+12 points)</strong>: Added if a company shares at least one director or commissioner with a Blue Chip company (like BBCA, ASII, TLKM). Serves as a proxy for talent pool and board pedigree.</li>
-                                        <li><strong>Super-Insider Conviction (+10 points)</strong>: Added if an individual retail tycoon (e.g. Lo Kheng Hong) holds &ge; 1.0% stake. Retail billionaires usually perform intensive research and verify management integrity before investing.</li>
-                                        <li><strong>Conglomerate Synergy (+8 points)</strong>: Added if a company is controlled by an active conglomerate group whose member firms have a median ROE &ge; 15% (showing strong operational management at group level).</li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -423,7 +447,7 @@
     </div>
 
     <footer>
-        <p>Smart Money & Network Alpha Finder &copy; 2026. Made for IDX-BEI investment research. Always perform your own due diligence.</p>
+        <p>Tradehub Terminal &copy; 2026. Made for IDX-BEI investment research & Ivezgo integration.</p>
     </footer>
 
     <script type="text/javascript" src="js/chart.js"></script>

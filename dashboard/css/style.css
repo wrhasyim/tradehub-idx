@@ -1,4 +1,4 @@
-        :root {
+:root {
             --bg-dark: #070a13;
             --panel-bg: rgba(13, 20, 38, 0.7);
             --panel-border: rgba(255, 255, 255, 0.08);
@@ -61,22 +61,29 @@
         }
 
         .logo-container h1 {
-            font-size: 1.4rem;
-            font-weight: 700;
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #ffffff;
             letter-spacing: -0.5px;
-            background: linear-gradient(135deg, #ffffff 0%, #9bc2ff 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            background: none;
+            -webkit-text-fill-color: initial;
         }
 
         .logo-container span {
-            font-size: 0.75rem;
-            background: rgba(59, 130, 246, 0.15);
-            color: var(--accent-blue);
-            padding: 0.2rem 0.5rem;
-            border-radius: 4px;
-            border: 1px solid rgba(59, 130, 246, 0.3);
-            font-weight: 500;
+            background: #ff9900;
+            color: #000000;
+            font-weight: 800;
+            font-size: 1.5rem;
+            padding: 0.1rem 0.4rem;
+            border-radius: 5px;
+            border: none;
+            margin-left: 4px;
+            letter-spacing: -0.5px;
+            line-height: 1.1;
+            display: inline-flex;
+            align-items: center;
         }
 
         nav {
@@ -321,7 +328,7 @@
             top: 6rem;
             max-height: calc(100vh - 8rem);
             overflow-y: auto;
-            display: none; /* Shown dynamically when item clicked */
+            display: none;
         }
 
         .workspace-detail.active {

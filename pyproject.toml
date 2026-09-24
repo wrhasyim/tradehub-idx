@@ -5,6 +5,7 @@ description = "IDX-BEI Quantitative Data & Analysis Toolkit"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "curl-cffi>=0.16.3",
     "idx-bei",
     "psycopg2-binary>=2.9.13",
 ]
