@@ -24,7 +24,7 @@ def clean_val(val, default=0):
     return val
 
 def sync_parquet_to_postgres():
-    print("🚀 Memulai sinkronisasi total Parquet ke PostgreSQL...")
+    print("🚀 Memulai sinkronisasi total Parquet ke PostgreSQL (Anti-Duplikat Aktif)...")
     
     con = duckdb.connect()
     stock_parquet = "data/timeseries/stock_summary/**/*.parquet"
@@ -72,7 +72,12 @@ def sync_parquet_to_postgres():
         if df_stock.empty:
             print("⚠️ Tidak ada data valid di Stock Summary Parquet.")
             return
-        print(f"📊 Memuat {len(df_stock)} baris data stock summary...")
+            
+        # 🛡️ ANTI DUPLIKAT LAPIS 1 (Pandas): Hapus baris ganda di memori sebelum diproses
+        initial_len = len(df_stock)
+        df_stock = df_stock.drop_duplicates(subset=['stock_code', 'trade_date'], keep='last')
+        dup_removed = initial_len - len(df_stock)
+        print(f"📊 Memuat {len(df_stock)} baris data stock summary unik (Menghapus {dup_removed} data ganda)...")
 
         # ==========================================
         # 2. PROSES BROKER SUMMARY (Full Data ke Relasional)
@@ -104,6 +109,12 @@ def sync_parquet_to_postgres():
 
                 df_broker['tdate_str'] = pd.to_datetime(df_broker[b_date]).dt.strftime('%Y-%m-%d')
                 
+                # 🛡️ ANTI DUPLIKAT LAPIS 1 (Pandas): Hapus duplikat transaksi broker per saham & tanggal
+                initial_b_len = len(df_broker)
+                df_broker = df_broker.drop_duplicates(subset=['extracted_code', 'tdate_str', b_firm], keep='last')
+                b_dup_removed = initial_b_len - len(df_broker)
+                print(f"🧹 Membersihkan {b_dup_removed} data broker ganda di memori...")
+                
                 for _, row in df_broker.iterrows():
                     scode = str(row['extracted_code']).upper()
                     if scode == 'UNKNOWN':
@@ -116,7 +127,7 @@ def sync_parquet_to_postgres():
                     
                     broker_records.append((scode, tdate, broker_code, vol, val, freq, 'now', 'now'))
                     
-                print(f"✅ Berhasil merangkum {len(broker_records)} baris data detail broker.")
+                print(f"✅ Berhasil merangkum {len(broker_records)} baris data detail broker unik.")
         except Exception as e:
             print(f"⚠️ Catatan pembacaan broker_summary: {e}")
 
@@ -129,7 +140,7 @@ def sync_parquet_to_postgres():
         )
         pg_cursor = pg_conn.cursor()
 
-        # A. Upsert Stock Prices (Murni OHLCV & Foreign Flow)
+        # A. Upsert Stock Prices (🛡️ Lapis 2: ON CONFLICT UPDATE)
         print(f"📦 Menyimpan {len(df_stock)} baris data stock_prices...")
         stock_insert_data = []
         for _, r in df_stock.iterrows():
@@ -176,7 +187,7 @@ def sync_parquet_to_postgres():
             page_size=10000
         )
 
-        # B. Upsert Broker Summaries (Tabel Relasional Terpisah)
+        # B. Upsert Broker Summaries (🛡️ Lapis 2: ON CONFLICT UPDATE)
         if broker_records:
             print(f"📦 Menyimpan {len(broker_records)} baris data broker_summaries...")
             execute_values(
@@ -200,7 +211,7 @@ def sync_parquet_to_postgres():
         pg_conn.commit()
         pg_cursor.close()
         pg_conn.close()
-        print("🎉 SELESAI SEMPURNA! Seluruh data masuk ke tabel masing-masing tanpa error.")
+        print("🎉 SELESAI SEMPURNA! Seluruh data masuk ke database secara aman tanpa ada data ganda.")
 
     except Exception as e:
         print(f"❌ Terjadi kesalahan fatal saat sinkronisasi: {e}")
