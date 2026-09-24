@@ -121,7 +121,7 @@ def sync_parquet_to_postgres():
             print(f"⚠️ Catatan pembacaan broker_summary: {e}")
 
         # ==========================================
-        # 3. KONEKSI & EKsekusi UPSERT KE POSTGRESQL
+        # 3. KONEKSI & EKSEKUSI UPSERT KE POSTGRESQL
         # ==========================================
         print("📦 Menyambungkan ke PostgreSQL...")
         pg_conn = psycopg2.connect(
@@ -129,13 +129,13 @@ def sync_parquet_to_postgres():
         )
         pg_cursor = pg_conn.cursor()
 
-        # A. Buat tabel khusus broker_summaries secara otomatis jika belum ada (Mencegah Data Loss & Error)
+        # A. Buat tabel broker_summaries dengan ukuran VARCHAR yang aman (150 karakter)
         pg_cursor.execute("""
             CREATE TABLE IF NOT EXISTS broker_summaries (
                 id BIGSERIAL PRIMARY KEY,
-                stock_code VARCHAR(10) NOT NULL,
+                stock_code VARCHAR(20) NOT NULL,
                 trade_date DATE NOT NULL,
-                broker_code VARCHAR(10) NOT NULL,
+                broker_code VARCHAR(150) NOT NULL,
                 volume BIGINT NOT NULL,
                 value NUMERIC(20,2) NOT NULL,
                 frequency BIGINT NOT NULL,
@@ -147,7 +147,7 @@ def sync_parquet_to_postgres():
         """)
         pg_conn.commit()
 
-        # B. Upsert Stock Prices (Sesuai persis kolom asli database Om)
+        # B. Upsert Stock Prices
         print(f"📦 Menyimpan {len(df_stock)} baris data stock_prices...")
         stock_insert_data = []
         for _, r in df_stock.iterrows():
@@ -194,7 +194,7 @@ def sync_parquet_to_postgres():
             page_size=10000
         )
 
-        # C. Upsert Broker Summaries (Menyimpan seluruh detail broker tanpa data loss)
+        # C. Upsert Broker Summaries
         if broker_records:
             print(f"📦 Menyimpan {len(broker_records)} baris data broker_summaries...")
             execute_values(
