@@ -24,7 +24,7 @@ def clean_val(val, default=0):
     return val
 
 def sync_parquet_to_postgres():
-    print("🚀 Memulai sinkronisasi total Parquet ke PostgreSQL (0% Data Loss)...")
+    print("🚀 Memulai sinkronisasi total Parquet ke PostgreSQL...")
     
     con = duckdb.connect()
     stock_parquet = "data/timeseries/stock_summary/**/*.parquet"
@@ -32,7 +32,7 @@ def sync_parquet_to_postgres():
     
     try:
         # ==========================================
-        # 1. PROSES STOCK SUMMARY (OHLCV & Foreign)
+        # 1. PROSES STOCK SUMMARY (OHLCV & Foreign Flow)
         # ==========================================
         cols_df = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{stock_parquet}', union_by_name=true)").fetchdf()
         available_cols = cols_df['column_name'].tolist()
@@ -75,7 +75,7 @@ def sync_parquet_to_postgres():
         print(f"📊 Memuat {len(df_stock)} baris data stock summary...")
 
         # ==========================================
-        # 2. PROSES BROKER SUMMARY (Full Data)
+        # 2. PROSES BROKER SUMMARY (Full Data ke Relasional)
         # ==========================================
         broker_records = []
         try:
@@ -129,25 +129,7 @@ def sync_parquet_to_postgres():
         )
         pg_cursor = pg_conn.cursor()
 
-        # A. Buat tabel broker_summaries dengan ukuran VARCHAR yang aman (150 karakter)
-        pg_cursor.execute("""
-            CREATE TABLE IF NOT EXISTS broker_summaries (
-                id BIGSERIAL PRIMARY KEY,
-                stock_code VARCHAR(20) NOT NULL,
-                trade_date DATE NOT NULL,
-                broker_code VARCHAR(150) NOT NULL,
-                volume BIGINT NOT NULL,
-                value NUMERIC(20,2) NOT NULL,
-                frequency BIGINT NOT NULL,
-                created_at TIMESTAMP WITHOUT TIME ZONE,
-                updated_at TIMESTAMP WITHOUT TIME ZONE,
-                CONSTRAINT broker_summaries_unique UNIQUE (stock_code, trade_date, broker_code)
-            );
-            CREATE INDEX IF NOT EXISTS idx_broker_summaries_code_date ON broker_summaries(stock_code, trade_date);
-        """)
-        pg_conn.commit()
-
-        # B. Upsert Stock Prices
+        # A. Upsert Stock Prices (Murni OHLCV & Foreign Flow)
         print(f"📦 Menyimpan {len(df_stock)} baris data stock_prices...")
         stock_insert_data = []
         for _, r in df_stock.iterrows():
@@ -194,7 +176,7 @@ def sync_parquet_to_postgres():
             page_size=10000
         )
 
-        # C. Upsert Broker Summaries
+        # B. Upsert Broker Summaries (Tabel Relasional Terpisah)
         if broker_records:
             print(f"📦 Menyimpan {len(broker_records)} baris data broker_summaries...")
             execute_values(
@@ -218,7 +200,7 @@ def sync_parquet_to_postgres():
         pg_conn.commit()
         pg_cursor.close()
         pg_conn.close()
-        print("🎉 SELESAI SEMPURNA! Seluruh data pasar dan rincian broker tersimpan aman di database PostgreSQL tanpa ada data loss.")
+        print("🎉 SELESAI SEMPURNA! Seluruh data masuk ke tabel masing-masing tanpa error.")
 
     except Exception as e:
         print(f"❌ Terjadi kesalahan fatal saat sinkronisasi: {e}")
