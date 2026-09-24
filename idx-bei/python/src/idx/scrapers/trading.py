@@ -58,6 +58,21 @@ def fetch_broker_summary(date=None, client=None, start=0, length=9999):
     data = client.get_json(endpoint, params=params)
 
     if data:
+        # --- PROTEKSI TERMINAL PRO: AMANKAN KOLOM BUY & SELL JIKA DIBERIKAN OLEH IDX ---
+        if "data" in data and isinstance(data["data"], list):
+            for row in data["data"]:
+                # Menangkap key spesifik Beli/Jual dan menstandarisasinya
+                # agar lolos dari pipeline Pandas dan tersimpan utuh di Parquet
+                if "BuyVolume" in row:
+                    row["buy_volume"] = row["BuyVolume"]
+                if "SellVolume" in row:
+                    row["sell_volume"] = row["SellVolume"]
+                if "BuyValue" in row:
+                    row["buy_value"] = row["BuyValue"]
+                if "SellValue" in row:
+                    row["sell_value"] = row["SellValue"]
+        # -----------------------------------------------------------------------------
+
         validate_schema(data, "broker_summary")
         check_schema_drift("broker_summary", data)
         return data
