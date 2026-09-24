@@ -3,6 +3,8 @@ import duckdb
 import psycopg2
 from psycopg2.extras import execute_values
 from dotenv import load_dotenv
+import json
+import pandas as pd
 
 # Memuat konfigurasi dari file .env utama Laravel
 load_dotenv("../.env")
@@ -11,20 +13,20 @@ DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_DATABASE", "tradehub_db")
 DB_USER = os.getenv("DB_USERNAME", "postgres")
-DB_PASS = os.getenv("DB_PASSWORD", "")
+DB_PASS = os.getenv("DB_PASSWORD", "tradehubidx")
 
 def sync_parquet_to_postgres():
-    print("🚀 Membaca data timeseries lengkap dari Parquet menggunakan DuckDB...")
+    print("🚀 Membaca data timeseries lengkap (Stock & Broker Summary) dari Parquet menggunakan DuckDB...")
     
     con = duckdb.connect()
-    parquet_path = "data/timeseries/stock_summary/**/*.parquet"
+    stock_parquet = "data/timeseries/stock_summary/**/*.parquet"
+    broker_parquet = "data/timeseries/broker_summary/**/*.parquet"
     
     try:
-        cols_df = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{parquet_path}', union_by_name=true)").fetchdf()
+        # 1. Ambil dan proses Stock Summary
+        cols_df = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{stock_parquet}', union_by_name=true)").fetchdf()
         available_cols = cols_df['column_name'].tolist()
-        print(f"📋 Kolom terdeteksi: {len(available_cols)} kolom tersedia.")
         
-        # Pemetaan dinamis kolom Parquet IDX
         code_col = next((c for c in available_cols if c.lower() in ['stockcode', 'code', 'symbol']), 'StockCode')
         date_col = next((c for c in available_cols if c.lower() in ['date', 'trade_date']), 'Date')
         open_col = next((c for c in available_cols if c.lower() in ['openprice', 'open']), 'OpenPrice')
@@ -35,10 +37,10 @@ def sync_parquet_to_postgres():
         change_col = next((c for c in available_cols if c.lower() in ['change', 'persen', 'percentage']), 'Change')
         val_col = next((c for c in available_cols if c.lower() == 'value'), 'Value')
         freq_col = next((c for c in available_cols if c.lower() == 'frequency'), 'Frequency')
-        f_buy_col = next((c for c in available_cols if c.lower() == 'foreignbuy'), 'ForeignBuy')
-        f_sell_col = next((c for c in available_cols if c.lower() == 'foreignsell'), 'ForeignSell')
+        f_buy_col = next((c for c in available_cols if c.lower() in ['foreignbuy', 'foreign_buy']), 'ForeignBuy')
+        f_sell_col = next((c for c in available_cols if c.lower() in ['foreignsell', 'foreign_sell']), 'ForeignSell')
 
-        query = f"""
+        stock_query = f"""
             SELECT 
                 CAST("{code_col}" AS VARCHAR) AS stock_code,
                 CAST("{date_col}" AS DATE) AS trade_date,
@@ -52,31 +54,107 @@ def sync_parquet_to_postgres():
                 CAST("{freq_col}" AS BIGINT) AS frequency,
                 CAST("{f_buy_col}" AS DECIMAL(20,2)) AS foreign_buy,
                 CAST("{f_sell_col}" AS DECIMAL(20,2)) AS foreign_sell
-            FROM read_parquet('{parquet_path}', union_by_name=true)
+            FROM read_parquet('{stock_parquet}', union_by_name=true)
             WHERE "{close_col}" > 0
         """
         
-        df = con.execute(query).fetchdf()
+        df_stock = con.execute(stock_query).fetchdf()
         
-        if df.empty:
-            print("⚠️ Tidak ada data valid di Parquet.")
+        if df_stock.empty:
+            print("⚠️ Tidak ada data valid di Stock Summary Parquet.")
             return
 
-        print(f"📊 Memproses {len(df)} baris data untuk dikirim ke PostgreSQL...")
+        print(f"📊 Memproses {len(df_stock)} baris data stock summary...")
 
+        # 2. Ambil dan rangkum Broker Summary (Broksum) secara aman via Pandas
+        broksum_map = {}
+        try:
+            print("🔍 Membaca dan merangkum data Broker Summary...")
+            df_broker = con.execute(f"SELECT * FROM read_parquet('{broker_parquet}', union_by_name=true)").fetchdf()
+            
+            if not df_broker.empty:
+                # Normalisasi nama kolom ke lowercase
+                df_broker.columns = [c.lower() for c in df_broker.columns]
+                
+                b_code = next((c for c in df_broker.columns if c in ['stockcode', 'code', 'symbol', 'stock_code']), None)
+                b_date = next((c for c in df_broker.columns if c in ['date', 'trade_date', 'tradedate']), None)
+                b_broker = next((c for c in df_broker.columns if c in ['brokercode', 'broker', 'broker_code']), None)
+                b_buy_vol = next((c for c in df_broker.columns if c in ['buyvolume', 'buy_volume', 'buyvol', 'volume_buy']), None)
+                b_buy_avg = next((c for c in df_broker.columns if c in ['buyaverageprice', 'buy_average_price', 'buyavg', 'avg_buy']), None)
+                b_sell_vol = next((c for c in df_broker.columns if c in ['sellvolume', 'sell_volume', 'sellvol', 'volume_sell']), None)
+                b_sell_avg = next((c for c in df_broker.columns if c in ['sellaverageprice', 'sell_average_price', 'sellavg', 'avg_sell']), None)
+
+                if b_code and b_date and b_broker:
+                    df_broker['tdate_str'] = pd.to_datetime(df_broker[b_date]).dt.strftime('%Y-%m-%d')
+                    
+                    for (scode, tdate), group in df_broker.groupby([b_code, 'tdate_str']):
+                        buyers_list = []
+                        sellers_list = []
+                        
+                        if b_buy_vol and b_buy_avg:
+                            top_buyers = group[group[b_buy_vol] > 0].sort_values(by=b_buy_vol, ascending=False).head(5)
+                            buyers_list = [
+                                {"broker": str(row[b_broker]), "lot": int(row[b_buy_vol]), "avg": float(row[b_buy_avg])}
+                                for _, row in top_buyers.iterrows()
+                            ]
+
+                        if b_sell_vol and b_sell_avg:
+                            top_sellers = group[group[b_sell_vol] > 0].sort_values(by=b_sell_vol, ascending=False).head(5)
+                            sellers_list = [
+                                {"broker": str(row[b_broker]), "lot": int(row[b_sell_vol]), "avg": float(row[b_sell_avg])}
+                                for _, row in top_sellers.iterrows()
+                            ]
+
+                        key = f"{str(scode).upper()}_{tdate}"
+                        broksum_map[key] = {
+                            "buyer": buyers_list,
+                            "seller": sellers_list
+                        }
+                    print(f"✅ Berhasil merangkum data broksum untuk {len(broksum_map)} sesi perdagangan.")
+                else:
+                    print(f⚠️ Kolom penting pada broker_summary tidak lengkap. Kolom ditemukan: {list(df_broker.columns)}) # type: ignore
+        except Exception as e:
+            print(f"⚠️ Catatan: Gagal membaca broker_summary: {e}")
+
+        # 3. Masukkan ke PostgreSQL
         pg_conn = psycopg2.connect(
             host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS
         )
         pg_cursor = pg_conn.cursor()
 
-        records = [tuple(x) for x in df.to_numpy()]
-        
+        insert_data = []
+        for _, r in df_stock.iterrows():
+            scode = str(r['stock_code']).upper()
+            tdate = str(r['trade_date'])
+            lookup_key = f"{scode}_{tdate}"
+            
+            json_broksum = json.dumps(broksum_map.get(lookup_key)) if lookup_key in broksum_map else None
+
+            insert_data.append((
+                scode, 
+                tdate, 
+                float(r['open']), 
+                float(r['high']), 
+                float(r['low']), 
+                float(r['close']), 
+                int(r['volume']),
+                float(r['change']) if r['change'] is not None else 0.0,
+                float(r['value']) if r['value'] is not None else 0.0,
+                int(r['frequency']) if r['frequency'] is not None else 0,
+                float(r['foreign_buy']) if r['foreign_buy'] is not None else 0.0,
+                float(r['foreign_sell']) if r['foreign_sell'] is not None else 0.0,
+                json_broksum,
+                'now', 
+                'now'
+            ))
+
+        print("📦 Menyimpan data ke PostgreSQL (Upsert)...")
         execute_values(
             pg_cursor,
             """
             INSERT INTO stock_prices (
                 stock_code, trade_date, open, high, low, close, volume, 
-                change, value, frequency, foreign_buy, foreign_sell, created_at, updated_at
+                change, value, frequency, foreign_buy, foreign_sell, broksum_data, created_at, updated_at
             )
             VALUES %s
             ON CONFLICT (stock_code, trade_date) 
@@ -91,23 +169,16 @@ def sync_parquet_to_postgres():
                 frequency = EXCLUDED.frequency,
                 foreign_buy = EXCLUDED.foreign_buy,
                 foreign_sell = EXCLUDED.foreign_sell,
+                broksum_data = EXCLUDED.broksum_data,
                 updated_at = NOW()
             """,
-            [(
-                r[0], str(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5]), int(r[6]),
-                float(r[7]) if r[7] is not None else 0.0,
-                float(r[8]) if r[8] is not None else 0.0,
-                int(r[9]) if r[9] is not None else 0,
-                float(r[10]) if r[10] is not None else 0.0,
-                float(r[11]) if r[11] is not None else 0.0,
-                'now', 'now'
-            ) for r in records]
+            insert_data
         )
 
         pg_conn.commit()
         pg_cursor.close()
         pg_conn.close()
-        print("✅ Seluruh data lengkap (OHLCV, Asing, Value, Frequency) berhasil disinkronkan ke PostgreSQL!")
+        print("🎉 Selesai! Data OHLCV, Foreign Flow, dan Broksum JSON berhasil disinkronkan ke PostgreSQL.")
 
     except Exception as e:
         print(f"❌ Terjadi kesalahan saat sinkronisasi: {e}")

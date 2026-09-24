@@ -6,16 +6,18 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class ChartDataController extends Controller
 {
     public function getOhlcvData(Request $request, $code)
     {
         $code = strtoupper($code);
-        // 1. Tangkap parameter TF, default 'D' (Daily) jika kosong
+        
+        // 1. Tangkap parameter TF dari frontend, default 'D' (Daily) jika kosong
         $tf = $request->query('tf', 'D'); 
         
-        // 2. Cek Status VIP User
+        // 2. Cek Status VIP User berdasarkan tabel users di database
         $isVip = false;
         if (Auth::check()) {
             $userRole = strtolower(Auth::user()->role ?? 'regular');
@@ -30,7 +32,7 @@ class ChartDataController extends Controller
         // ROUTING A: INTRADAY (1, 5, 15, 60, 240) -> VIA API INVEZGO
         // =========================================================
         if (in_array($tf, ['1', '5', '15', '60', '240'])) {
-            // Panggil fungsi Invezgo Intraday (Pastikan endpoint sesuai dok. Invezgo)
+            // Panggil fungsi Invezgo Intraday
             $intradayData = $this->fetchIntradayInvezgo($code, $tf);
             
             return response()->json([
@@ -44,20 +46,29 @@ class ChartDataController extends Controller
         // ROUTING B: EOD (D, W, M) -> VIA POSTGRESQL LOKAL + AGREGASI
         // =========================================================
 
-        // Tarik Data Historis EOD Utama dari PostgreSQL
+        // Tarik Data Historis EOD Utama dari PostgreSQL (Hasil Scraper idx-bei)
         $historicalData = DB::table('stock_prices')
             ->where('stock_code', $code)
             ->orderBy('trade_date', 'asc')
             ->get()
             ->map(function ($item) {
+                // Parsing Data Broksum JSON (Sesuaikan dengan nama kolom DB Om)
+                $broksumRaw = isset($item->broksum_data) && !empty($item->broksum_data) 
+                    ? json_decode($item->broksum_data, true) 
+                    : null;
+
                 return [
-                    'time' => strtotime($item->trade_date) * 1000, 
-                    'open' => (float)$item->open,
-                    'high' => (float)$item->high,
-                    'low' => (float)$item->low,
-                    'close' => (float)$item->close,
-                    'volume' => (int)$item->volume
-                ];
+    'time'         => strtotime($item->trade_date) * 1000, 
+    'open'         => (float)$item->open,
+    'high'         => (float)$item->high,
+    'low'          => (float)$item->low,
+    'close'        => (float)$item->close,
+    'volume'       => (int)$item->volume,
+    // TAMBAHKAN INI SESUAI DB OM
+    'foreign_buy'  => (float)$item->foreign_buy,
+    'foreign_sell' => (float)$item->foreign_sell,
+    'broksum'      => null // Biarkan null karena tidak ada di DB, tabel broksum akan tertulis "API Tidak Tersedia"
+];
             })->toArray();
 
         // Jika database lokal kosong, coba ambil dari Invezgo Historis
@@ -65,7 +76,7 @@ class ChartDataController extends Controller
             $historicalData = $this->fetchHistoricalInvezgo($code);
         }
 
-        // Khusus Member VIP: Kombo Data Live Real-Time (Hanya diaktifkan saat TF Daily)
+        // Khusus Member VIP: Kombo Data Live Real-Time (Hanya aktif saat TF Daily)
         if ($isVip && !empty($historicalData) && $tf === 'D') {
             $realtimeCandle = $this->fetchRealtimeInvezgo($code);
             
@@ -74,9 +85,14 @@ class ChartDataController extends Controller
                 $todayDate = date('Y-m-d', $realtimeCandle['time'] / 1000);
                 $dbLastDate = date('Y-m-d', $historicalData[$lastIndex]['time'] / 1000);
 
+                // Jika tanggal hari ini sudah ada di database lokal, update dengan harga live terbaru
                 if ($todayDate === $dbLastDate) {
+                    // Amankan data broksum & bandar_vol lokal agar tidak tertimpa null dari Invezgo Realtime
+                    $realtimeCandle['broksum'] = $historicalData[$lastIndex]['broksum'] ?? null;
+                    $realtimeCandle['bandar_vol'] = $historicalData[$lastIndex]['bandar_vol'] ?? 0;
                     $historicalData[$lastIndex] = $realtimeCandle;
                 } else {
+                    // Jika belum ada, tambahkan sebagai candle live hari ini
                     $historicalData[] = $realtimeCandle;
                 }
             }
@@ -87,26 +103,30 @@ class ChartDataController extends Controller
         // =========================================================
         if ($tf === 'W' || $tf === 'M') {
             $grouped = collect($historicalData)->groupBy(function ($item) use ($tf) {
-                $date = \Carbon\Carbon::createFromTimestamp($item['time'] / 1000);
-                // Jika TF Weekly, kelompokkan per Tahun-Minggu (ex: 2026-W40)
-                // Jika TF Monthly, kelompokkan per Tahun-Bulan (ex: 2026-10)
+                $date = Carbon::createFromTimestamp($item['time'] / 1000);
+                // W: Kelompokkan per Tahun-Minggu (ex: 2026-W40)
+                // M: Kelompokkan per Tahun-Bulan (ex: 2026-09)
                 return $tf === 'W' ? $date->format('o-W') : $date->format('Y-m');
             });
 
             $aggregatedData = [];
             foreach ($grouped as $period => $candles) {
                 $aggregatedData[] = [
-                    'time'   => $candles->first()['time'], // Waktu candle pertama di minggu/bulan tsb
-                    'open'   => $candles->first()['open'], // Harga Open awal periode
-                    'high'   => $candles->max('high'),     // Harga Tertinggi selama periode
-                    'low'    => $candles->min('low'),      // Harga Terendah selama periode
-                    'close'  => $candles->last()['close'], // Harga Close di akhir periode
-                    'volume' => $candles->sum('volume')    // Total volume periode tsb
+                    'time'       => $candles->first()['time'],
+                    'open'       => $candles->first()['open'],
+                    'high'       => $candles->max('high'),
+                    'low'        => $candles->min('low'),
+                    'close'      => $candles->last()['close'],
+                    'volume'     => $candles->sum('volume'),
+                    // Agregasi Bandarmologi & Broksum
+                    'bandar_vol' => $candles->sum('bandar_vol'), // Akumulasi net volume bandar sepekan/sebulan
+                    'broksum'    => $candles->last()['broksum']  // Menampilkan komposisi broker hari terakhir sebagai representasi (karena struktur JSON sulit disummary manual)
                 ];
             }
             $historicalData = $aggregatedData;
         }
 
+        // Tentukan status sumber data untuk indikator di frontend
         $dataSourceStatus = 'LOCAL_DB_ONLY';
         if ($isVip && env('INVEZGO_API_KEY')) {
             $dataSourceStatus = 'LOCAL_DB_PLUS_INVEZGO_LIVE';
@@ -142,12 +162,14 @@ class ChartDataController extends Controller
                 $timestamp = strtotime(date('Y-m-d')) * 1000;
 
                 return [
-                    'time'   => $timestamp,
-                    'open'   => (float)($result['open'] ?? 0),
-                    'high'   => (float)($result['high'] ?? 0),
-                    'low'    => (float)($result['low'] ?? 0),
-                    'close'  => (float)($result['close'] ?? 0),
-                    'volume' => (int)($result['volume'] ?? 0)
+                    'time'       => $timestamp,
+                    'open'       => (float)($result['open'] ?? 0),
+                    'high'       => (float)($result['high'] ?? 0),
+                    'low'        => (float)($result['low'] ?? 0),
+                    'close'      => (float)($result['close'] ?? 0),
+                    'volume'     => (int)($result['volume'] ?? 0),
+                    'bandar_vol' => 0,
+                    'broksum'    => null
                 ];
             }
             return null;
@@ -157,7 +179,7 @@ class ChartDataController extends Controller
     }
 
     /**
-     * Mengambil Data Historis dari Invezgo API
+     * Mengambil Data Historis dari Invezgo API (Hanya jalan jika DB Lokal kosong)
      */
     private function fetchHistoricalInvezgo($code)
     {
@@ -184,12 +206,14 @@ class ChartDataController extends Controller
                 $data = [];
                 foreach ($result as $item) {
                     $data[] = [
-                        'time'   => strtotime($item['date']) * 1000,
-                        'open'   => (float)$item['open'],
-                        'high'   => (float)$item['high'],
-                        'low'    => (float)$item['low'],
-                        'close'  => (float)$item['close'],
-                        'volume' => (int)$item['volume']
+                        'time'       => strtotime($item['date']) * 1000,
+                        'open'       => (float)$item['open'],
+                        'high'       => (float)$item['high'],
+                        'low'        => (float)$item['low'],
+                        'close'      => (float)$item['close'],
+                        'volume'     => (int)$item['volume'],
+                        'bandar_vol' => 0, 
+                        'broksum'    => null
                     ];
                 }
                 return $data;
@@ -202,7 +226,6 @@ class ChartDataController extends Controller
 
     /**
      * MENGAMBIL DATA INTRADAY MENITAN DARI INVEZGO API
-     * (Pastikan URL Endpoint disesuaikan dengan dokumentasi API Invezgo)
      */
     private function fetchIntradayInvezgo($code, $tf)
     {
@@ -212,11 +235,11 @@ class ChartDataController extends Controller
         $apiKey = env('INVEZGO_API_KEY');
         if (!$apiKey) return []; 
 
-        // Mapping parameter TF untuk Invezgo (misal: 1m, 5m, 15m, 60m)
+        // Parameter Interval Invezgo: 1m, 5m, 15m, 60m (Berdasarkan dokumen API)
         $interval = $tf . 'm'; 
 
         try {
-            // PERHATIAN: Sesuaikan URL Endpoint ini dengan dokumentasi resmi Invezgo Intraday Historical
+            // Asumsi Endpoint Invezgo untuk Intraday Historis
             $endpoint = "https://api.invezgo.com/v1/analysis/intraday-history/{$ticker}?interval={$interval}";
 
             $response = Http::withHeaders([
@@ -228,12 +251,15 @@ class ChartDataController extends Controller
                 $data = [];
                 foreach ($result as $item) {
                     $data[] = [
-                        'time'   => strtotime($item['date']) * 1000, // Asumsi $item['date'] memiliki timestamp lengkap seperti "2026-09-23 10:15:00"
-                        'open'   => (float)$item['open'],
-                        'high'   => (float)$item['high'],
-                        'low'    => (float)$item['low'],
-                        'close'  => (float)$item['close'],
-                        'volume' => (int)$item['volume']
+                        'time'       => strtotime($item['date']) * 1000,
+                        'open'       => (float)$item['open'],
+                        'high'       => (float)$item['high'],
+                        'low'        => (float)$item['low'],
+                        'close'      => (float)$item['close'],
+                        'volume'     => (int)$item['volume'],
+                        // Kosongkan broksum/bandar_vol untuk timeframe menit karena biasanya API tidak menyediakannya per menit
+                        'bandar_vol' => 0, 
+                        'broksum'    => null
                     ];
                 }
                 return $data;

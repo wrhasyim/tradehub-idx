@@ -37,7 +37,7 @@
                             placeholder="KODE..." autocomplete="off">
                     </div>
 
-                    <!-- Timeframe Selector (Disembunyikan secara default / Mode TV) -->
+                    <!-- Timeframe Selector (Disembunyikan via JS saat mode TV) -->
                     <div id="customTfWrapper" class="hidden bg-zinc-950 p-1 rounded-lg border border-zinc-800 items-center gap-0.5 transition-all">
                         <button class="tf-btn px-2 py-1 text-xs font-bold rounded text-zinc-400 hover:text-white transition-all" data-tf="1">1m</button>
                         <button class="tf-btn px-2 py-1 text-xs font-bold rounded text-zinc-400 hover:text-white transition-all" data-tf="5">5m</button>
@@ -63,10 +63,13 @@
                         </button>
                     </div>
 
-                    <!-- Toggle SMC -->
-                    <div id="smcWrapper" class="hidden">
+                    <!-- Toggle SMC & Foreign -->
+                    <div id="smcWrapper" class="hidden items-center gap-2">
                         <button id="toggleSMC" class="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-900/40 text-indigo-400 border border-indigo-700/50 hover:bg-indigo-800/50 transition-colors">
                             SMC PRO : OFF
+                        </button>
+                        <button id="toggleBroksum" class="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-900/40 text-emerald-400 border border-emerald-700/50 hover:bg-emerald-800/50 transition-colors">
+                            FOREIGN : OFF
                         </button>
                     </div>
 
@@ -85,6 +88,29 @@
             <div class="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-1 relative">
                 <div id="toast" class="absolute top-4 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2 bg-zinc-800 border border-zinc-700 text-white rounded shadow-lg text-xs font-bold"></div>
                 
+                <!-- Floating Foreign Panel -->
+                <div id="broksumPanel" class="hidden absolute top-4 left-4 z-40 w-64 bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl backdrop-blur-md flex-col overflow-hidden pointer-events-none transition-opacity duration-200">
+                    <div class="bg-zinc-800 px-3 py-2 border-b border-zinc-700 flex justify-between items-center">
+                        <span class="text-[11px] font-bold text-white tracking-wider">FOREIGN FLOW</span>
+                        <span id="bsDate" class="text-[10px] text-amber-500 font-bold">-</span>
+                    </div>
+                    
+                    <div class="px-3 py-3 bg-zinc-800/30">
+                        <div class="flex justify-between items-center mb-1.5">
+                            <span class="text-[11px] text-zinc-400">Foreign Buy</span>
+                            <span id="fBuy" class="text-[11px] font-bold text-emerald-400">0</span>
+                        </div>
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-[11px] text-zinc-400">Foreign Sell</span>
+                            <span id="fSell" class="text-[11px] font-bold text-red-400">0</span>
+                        </div>
+                        <div class="flex justify-between items-center pt-2 mt-2 border-t border-zinc-700">
+                            <span class="text-xs font-black text-white">NET FOREIGN</span>
+                            <span id="fNet" class="text-xs font-black text-zinc-500">0</span>
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- 1. Wadah TradingView -->
                 <div id="tv-container" style="width: 100%; height: 85vh; min-height: 650px;" class="rounded-lg overflow-hidden"></div>
                 
@@ -100,7 +126,7 @@
                     </div>
                     <h3 class="text-2xl font-black text-white mb-2 tracking-wide">FITUR EKSKLUSIF VIP</h3>
                     <p class="text-sm text-zinc-400 mb-8 text-center max-w-md leading-relaxed">
-                        Akses penuh ke <strong class="text-white">Tradehub Chart</strong> dengan indikator <em>Smart Money Concepts (SMC)</em>, pergerakan real-time, dan rotasi sektor khusus untuk Member VIP.
+                        Akses penuh ke <strong class="text-white">Tradehub Chart</strong> dengan indikator <em>Smart Money Concepts (SMC)</em>, Foreign Flow, dan fitur pro lainnya.
                     </p>
                     <a href="{{ route('dashboard') }}" class="px-8 py-3 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold rounded-lg transition-colors shadow-[0_0_20px_rgba(245,158,11,0.3)]">
                         Upgrade ke VIP Sekarang
@@ -116,38 +142,74 @@
         let currentMode = 'tv'; 
         let currentInterval = 'D'; 
         let tvWidget = null;
-        let customChart = null, candleSeries = null, volumeSeries = null;
+        let customChart = null, candleSeries = null, volumeSeries = null, bandarSeries = null;
         let customRawData = [];
         let smcActive = false;
+        let broksumActive = false;
         let typingTimer;
         const doneTypingInterval = 800;
 
+        function formatVal(val) {
+            if (!val || isNaN(val)) return '0';
+            let absVal = Math.abs(val);
+            if (absVal >= 1e9) return (val / 1e9).toFixed(2) + ' M';
+            if (absVal >= 1e6) return (val / 1e6).toFixed(2) + ' Jt';
+            return val.toLocaleString('id-ID');
+        }
+
         function showToast(msg, type = 'success') {
             const t = document.getElementById('toast');
+            if(!t) return;
             t.textContent = msg;
             t.className = `absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded shadow-lg text-xs font-bold ${type === 'error' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-zinc-950'}`;
-            t.classList.remove('hidden');
-            setTimeout(() => t.classList.add('hidden'), 3000);
+            t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 3000);
+        }
+
+        // FUNGSI PENGATUR UI (Anti-Error Toggling)
+        function setUIMode(mode) {
+            const tv = document.getElementById('tv-container');
+            const lw = document.getElementById('lw-container');
+            const pw = document.getElementById('paywall-container');
+            const smcWrap = document.getElementById('smcWrapper');
+            const tfWrap = document.getElementById('customTfWrapper');
+            const bPanel = document.getElementById('broksumPanel');
+            const snapBtn = document.getElementById('btnSnapshot');
+
+            // Reset semua display
+            if(tv) tv.style.display = 'none';
+            if(lw) lw.style.display = 'none';
+            if(pw) { pw.style.display = 'none'; pw.classList.remove('flex'); }
+            if(smcWrap) { smcWrap.classList.add('hidden'); smcWrap.classList.remove('flex'); }
+            if(tfWrap) { tfWrap.classList.add('hidden'); tfWrap.classList.remove('sm:flex'); }
+            if(bPanel) { bPanel.classList.add('hidden'); bPanel.classList.remove('flex'); }
+            if(snapBtn) { snapBtn.classList.add('hidden'); snapBtn.classList.remove('block'); }
+
+            if (mode === 'tv') {
+                if(tv) tv.style.display = 'block';
+            } 
+            else if (mode === 'custom') {
+                if(lw) lw.style.display = 'block';
+                if(smcWrap) { smcWrap.classList.remove('hidden'); smcWrap.classList.add('flex'); }
+                if(tfWrap) { tfWrap.classList.remove('hidden'); tfWrap.classList.add('sm:flex'); }
+                if(snapBtn) { snapBtn.classList.remove('hidden'); snapBtn.classList.add('block'); }
+                if(broksumActive && bPanel) { bPanel.classList.remove('hidden'); bPanel.classList.add('flex'); }
+            } 
+            else if (mode === 'paywall') {
+                if(pw) { pw.style.display = 'flex'; }
+            }
         }
 
         function renderTvWidget(symbolCode) {
-            document.getElementById('lw-container').classList.add('hidden');
-            document.getElementById('paywall-container').classList.add('hidden');
-            document.getElementById('paywall-container').classList.remove('flex');
-            
-            // Sembunyikan kontrol khusus Tradehub Chart
-            document.getElementById('smcWrapper').classList.add('hidden'); 
-            document.getElementById('btnSnapshot').classList.add('hidden');
-            document.getElementById('customTfWrapper').classList.add('hidden'); // Sembunyikan TF Selector
-            document.getElementById('customTfWrapper').classList.remove('sm:flex');
-
-            document.getElementById('tv-container').classList.remove('hidden');
-            document.getElementById('tv-container').innerHTML = '';
+            setUIMode('tv');
+            const container = document.getElementById('tv-container');
+            if(!container) return;
+            container.innerHTML = '';
 
             tvWidget = new TradingView.widget({
                 "autosize": true,
                 "symbol": "IDX:" + symbolCode, 
-                "interval": "D", // Biarkan TV default ke Daily karena dia punya selector sendiri
+                "interval": "D", 
                 "timezone": "Asia/Jakarta",
                 "theme": "dark",
                 "style": "1", 
@@ -155,7 +217,7 @@
                 "enable_publishing": false,
                 "backgroundColor": "#09090b",
                 "gridColor": "#27272a", 
-                "hide_top_toolbar": false, // Biarkan toolbar bawaan TV muncul
+                "hide_top_toolbar": false,
                 "hide_legend": false,
                 "save_image": true,
                 "hide_side_toolbar": false, 
@@ -168,31 +230,27 @@
         }
 
         function renderCustomChart(symbolCode) {
-            document.getElementById('tv-container').classList.add('hidden');
-            document.getElementById('paywall-container').classList.add('hidden');
-            document.getElementById('paywall-container').classList.remove('flex');
-            document.getElementById('lw-container').classList.remove('hidden');
-            
-            if (isPremiumUser) {
-                document.getElementById('smcWrapper').classList.remove('hidden');
-                // Tampilkan TF Selector khusus untuk Tradehub Chart
-                document.getElementById('customTfWrapper').classList.remove('hidden');
-                document.getElementById('customTfWrapper').classList.add('sm:flex');
+            if (!isPremiumUser) {
+                setUIMode('paywall');
+                return;
             }
-            
-            document.getElementById('btnSnapshot').classList.remove('hidden');
+
+            setUIMode('custom');
 
             if (customChart) {
                 customChart.remove();
                 customChart = null;
             }
 
-            customChart = LightweightCharts.createChart(document.getElementById('lw-container'), {
+            const container = document.getElementById('lw-container');
+            if(!container) return;
+
+            customChart = LightweightCharts.createChart(container, {
                 autoSize: true,
                 layout: { background: { type: 'solid', color: '#09090b' }, textColor: '#a1a1aa' },
                 grid: { vertLines: { color: '#27272a' }, horzLines: { color: '#27272a' } },
                 crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-                rightPriceScale: { borderColor: '#27272a', scaleMargins: { top: 0.1, bottom: 0.2 } },
+                rightPriceScale: { borderColor: '#27272a', scaleMargins: { top: 0.1, bottom: 0.25 } },
                 timeScale: { borderColor: '#27272a', timeVisible: true }
             });
 
@@ -207,8 +265,37 @@
                 priceFormat: { type: 'volume' },
                 priceScaleId: 'volume',
             });
+            
+            bandarSeries = customChart.addHistogramSeries({
+                color: '#3b82f6',
+                priceFormat: { type: 'volume' },
+                priceScaleId: 'bandar', 
+            });
 
-            customChart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+            customChart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+            customChart.priceScale('bandar').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+
+            // Crosshair Logic untuk Foreign Flow
+            customChart.subscribeCrosshairMove((param) => {
+                if (!broksumActive || !param.time || param.point.x < 0 || param.point.y < 0) return;
+
+                const hoveredData = customRawData.find(d => d.time === param.time);
+                if (hoveredData) {
+                    const dateObj = new Date(hoveredData.time * 1000);
+                    document.getElementById('bsDate').textContent = dateObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+
+                    const fBuy = parseFloat(hoveredData.foreign_buy) || 0;
+                    const fSell = parseFloat(hoveredData.foreign_sell) || 0;
+                    const fNet = fBuy - fSell;
+
+                    document.getElementById('fBuy').textContent = formatVal(fBuy);
+                    document.getElementById('fSell').textContent = formatVal(fSell);
+                    
+                    const elNet = document.getElementById('fNet');
+                    elNet.textContent = (fNet > 0 ? '+' : '') + formatVal(fNet);
+                    elNet.className = 'text-xs font-black ' + (fNet > 0 ? 'text-emerald-400' : (fNet < 0 ? 'text-red-400' : 'text-zinc-500'));
+                }
+            });
 
             fetchDataFromController(symbolCode);
         }
@@ -216,23 +303,21 @@
         async function fetchDataFromController(code) {
             showToast(`Memuat data ${currentInterval}...`, "success");
             try {
-                // Controller Laravel Om harus menangkap parameter `tf` ini dan mengirim data dari API Invezgo/lokal
                 const response = await fetch(`/api/chart/${code}?tf=${currentInterval}`);
-                
-                const contentType = response.headers.get("content-type");
-                if (!contentType || !contentType.includes("application/json")) {
-                    throw new Error("Endpoint API tidak ditemukan.");
-                }
-
                 const result = await response.json();
                 
                 if (result.status !== 'success' || !Array.isArray(result.data) || result.data.length === 0) {
-                    showToast("Data saham tidak tersedia di server.", "error");
+                    showToast("Data saham tidak tersedia.", "error");
                     return;
                 }
 
                 const formattedData = result.data.map(item => ({
-                    time: Math.floor(item.time / 1000), open: item.open, high: item.high, low: item.low, close: item.close, volume: item.volume
+                    time: Math.floor(item.time / 1000), 
+                    open: parseFloat(item.open), high: parseFloat(item.high), 
+                    low: parseFloat(item.low), close: parseFloat(item.close), 
+                    volume: parseInt(item.volume),
+                    foreign_buy: parseFloat(item.foreign_buy || 0),
+                    foreign_sell: parseFloat(item.foreign_sell || 0)
                 }));
 
                 customRawData = formattedData;
@@ -240,6 +325,14 @@
                 volumeSeries.setData(formattedData.map(d => ({
                     time: d.time, value: d.volume, color: d.close > d.open ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)' 
                 })));
+                
+                bandarSeries.setData(formattedData.map(d => {
+                    let net = d.foreign_buy - d.foreign_sell;
+                    return {
+                        time: d.time, value: Math.abs(net), 
+                        color: net > 0 ? 'rgba(16, 185, 129, 0.8)' : 'rgba(239, 68, 68, 0.8)' 
+                    };
+                }));
 
                 const visibleBars = 100;
                 const fromIdx = Math.max(0, formattedData.length - visibleBars);
@@ -248,30 +341,22 @@
                 applySmcState();
             } catch (err) {
                 console.error(err);
-                showToast(err.message || "Gagal terhubung ke server data.", "error");
+                showToast("Gagal terhubung ke server.", "error");
             }
         }
 
         function applySmcState() {
             const btnSMC = document.getElementById('toggleSMC');
-            
+            if (!btnSMC) return;
+
             if (smcActive && customRawData.length > 0) {
-                if (typeof drawSmartMoneyZones === "function") {
-                    drawSmartMoneyZones(customRawData, customChart, candleSeries);
-                }
-                if (typeof calculateMarketStructureAndMarkers === "function") {
-                    const marketMarkers = calculateMarketStructureAndMarkers(customRawData);
-                    candleSeries.setMarkers(marketMarkers);
-                }
-                
+                if (typeof drawSmartMoneyZones === "function") drawSmartMoneyZones(customRawData, customChart, candleSeries);
+                if (typeof calculateMarketStructureAndMarkers === "function") candleSeries.setMarkers(calculateMarketStructureAndMarkers(customRawData));
                 btnSMC.textContent = "SMC PRO : ON";
                 btnSMC.className = "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-600 text-white border border-indigo-500 shadow";
             } else {
-                candleSeries.setMarkers([]);
-                if (typeof clearSmcZones === "function") {
-                    clearSmcZones(candleSeries);
-                }
-                
+                if (candleSeries) candleSeries.setMarkers([]);
+                if (typeof clearSmcZones === "function" && candleSeries) clearSmcZones(candleSeries);
                 btnSMC.textContent = "SMC PRO : OFF";
                 btnSMC.className = "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-900/40 text-indigo-400 border border-indigo-700/50 hover:bg-indigo-800/50 transition-colors";
             }
@@ -287,11 +372,27 @@
 
         document.addEventListener("DOMContentLoaded", () => {
             const stockInput = document.getElementById('stockCode');
-            
-            // Inisialisasi awal ke mode TradingView
-            renderTvWidget(stockInput.value);
+            if(stockInput) renderTvWidget(stockInput.value);
 
-            // Listener Tombol Timeframe Khusus Custom Chart
+            // Toggle Broksum/Foreign
+            const btnBroksum = document.getElementById('toggleBroksum');
+            if(btnBroksum) {
+                btnBroksum.addEventListener('click', function() {
+                    broksumActive = !broksumActive;
+                    const panel = document.getElementById('broksumPanel');
+                    if (broksumActive) {
+                        this.textContent = "FOREIGN : ON";
+                        this.className = "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-600 text-white border border-emerald-500 shadow";
+                        if (currentMode === 'custom' && panel) { panel.classList.remove('hidden'); panel.classList.add('flex'); }
+                    } else {
+                        this.textContent = "FOREIGN : OFF";
+                        this.className = "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-900/40 text-emerald-400 border border-emerald-700/50 hover:bg-emerald-800/50 transition-colors";
+                        if(panel) { panel.classList.add('hidden'); panel.classList.remove('flex'); }
+                    }
+                });
+            }
+
+            // Timeframe Buttons
             const tfButtons = document.querySelectorAll('.tf-btn');
             tfButtons.forEach(btn => {
                 btn.addEventListener('click', function() {
@@ -303,72 +404,70 @@
                     this.classList.add('bg-amber-500', 'text-zinc-950', 'active-tf');
                     
                     currentInterval = this.getAttribute('data-tf');
-                    const code = stockInput.value.toUpperCase().trim();
+                    const code = stockInput ? stockInput.value.toUpperCase().trim() : '';
                     if (code) executeLoad(code);
                 });
             });
 
-            // Ganti Mode ke TradingView
-            document.getElementById('modeTv').addEventListener('click', function() {
-                currentMode = 'tv';
-                this.className = "px-3 py-1 text-xs font-bold rounded bg-amber-500 text-zinc-950 transition-all";
-                document.getElementById('modeCustom').className = "px-3 py-1 text-xs font-bold rounded text-zinc-400 hover:text-white transition-all";
-                executeLoad(stockInput.value.toUpperCase().trim());
-            });
+            // Mode Switching
+            const modeTv = document.getElementById('modeTv');
+            const modeCustom = document.getElementById('modeCustom');
 
-            // Ganti Mode ke Tradehub Chart
-            document.getElementById('modeCustom').addEventListener('click', function() {
-                this.className = "px-3 py-1 text-xs font-bold rounded bg-amber-500 text-zinc-950 transition-all";
-                document.getElementById('modeTv').className = "px-3 py-1 text-xs font-bold rounded text-zinc-400 hover:text-white transition-all";
-                
-                if (!isPremiumUser) {
-                    document.getElementById('tv-container').classList.add('hidden');
-                    document.getElementById('lw-container').classList.add('hidden');
-                    document.getElementById('paywall-container').classList.remove('hidden');
-                    document.getElementById('paywall-container').classList.add('flex');
-                    
-                    document.getElementById('smcWrapper').classList.add('hidden');
-                    document.getElementById('btnSnapshot').classList.add('hidden');
-                    document.getElementById('customTfWrapper').classList.add('hidden');
-                    document.getElementById('customTfWrapper').classList.remove('sm:flex');
-                    return; 
-                }
-                
-                currentMode = 'custom';
-                executeLoad(stockInput.value.toUpperCase().trim());
-            });
+            if(modeTv) {
+                modeTv.addEventListener('click', function() {
+                    currentMode = 'tv';
+                    this.className = "px-3 py-1 text-xs font-bold rounded bg-amber-500 text-zinc-950 transition-all";
+                    if(modeCustom) modeCustom.className = "px-3 py-1 text-xs font-bold rounded text-zinc-400 hover:text-white transition-all";
+                    if(stockInput) executeLoad(stockInput.value.toUpperCase().trim());
+                });
+            }
 
-            stockInput.addEventListener('input', function () {
-                clearTimeout(typingTimer);
-                const code = this.value.toUpperCase().trim();
-                if (code.length >= 4 || code === 'IHSG') {
-                    typingTimer = setTimeout(() => { executeLoad(code); }, doneTypingInterval);
-                }
-            });
+            if(modeCustom) {
+                modeCustom.addEventListener('click', function() {
+                    this.className = "px-3 py-1 text-xs font-bold rounded bg-amber-500 text-zinc-950 transition-all";
+                    if(modeTv) modeTv.className = "px-3 py-1 text-xs font-bold rounded text-zinc-400 hover:text-white transition-all";
+                    currentMode = 'custom';
+                    if(stockInput) executeLoad(stockInput.value.toUpperCase().trim());
+                });
+            }
 
-            stockInput.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') {
+            if(stockInput) {
+                stockInput.addEventListener('input', function () {
                     clearTimeout(typingTimer);
                     const code = this.value.toUpperCase().trim();
-                    if (code) executeLoad(code);
-                }
-            });
+                    if (code.length >= 4 || code === 'IHSG') typingTimer = setTimeout(() => { executeLoad(code); }, doneTypingInterval);
+                });
 
-            document.getElementById('toggleSMC').addEventListener('click', () => {
-                smcActive = !smcActive;
-                applySmcState();
-            });
+                stockInput.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') {
+                        clearTimeout(typingTimer);
+                        const code = this.value.toUpperCase().trim();
+                        if (code) executeLoad(code);
+                    }
+                });
+            }
 
-            document.getElementById('btnSnapshot').addEventListener('click', () => {
-                const canvas = document.querySelector('#lw-container canvas');
-                if (canvas) {
-                    const link = document.createElement('a');
-                    link.download = `Tradehub-${stockInput.value.toUpperCase()}-${currentInterval}.png`;
-                    link.href = canvas.toDataURL('image/png');
-                    link.click();
-                    showToast("Snapshot chart berhasil diunduh!", "success");
-                }
-            });
+            const btnSMC = document.getElementById('toggleSMC');
+            if(btnSMC) {
+                btnSMC.addEventListener('click', () => {
+                    smcActive = !smcActive;
+                    applySmcState();
+                });
+            }
+
+            const btnSnap = document.getElementById('btnSnapshot');
+            if(btnSnap) {
+                btnSnap.addEventListener('click', () => {
+                    const canvas = document.querySelector('#lw-container canvas');
+                    if (canvas) {
+                        const link = document.createElement('a');
+                        link.download = `Tradehub-${stockInput.value.toUpperCase()}-${currentInterval}.png`;
+                        link.href = canvas.toDataURL('image/png');
+                        link.click();
+                        showToast("Snapshot chart berhasil diunduh!", "success");
+                    }
+                });
+            }
         });
     </script>
 </x-app-layout>
