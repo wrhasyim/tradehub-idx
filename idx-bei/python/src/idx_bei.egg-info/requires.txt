@@ -1,9 +1,0 @@
-neo4j>=5.28.1
-tqdm>=4.67.1
-yfinance>=0.2.59
-curl_cffi>=0.15.0
-python-dotenv>=1.0.1
-pyarrow>=18.0.0
-duckdb>=1.5.5
-fastapi>=0.115.0
-uvicorn>=0.30.0

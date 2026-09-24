@@ -1,27 +1,60 @@
+# --- Python & Environments ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+python/.venv/
+.env
+python/.env
+.env.local
+.python-version
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Frontend (Node / Bun / Vite) ---
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# --- Databases & DuckDB ---
+*.duckdb
+*.duckdb.wal
+neo4j_data/
+postgres_data/
+
+# --- Data ---
+# Large/regenerated scraped datasets
+data/timeseries/
+data/parquet/
+data/.raw_archive/
+data/.schema_snapshots.json
+data/.scrape_stats.json
+data/*.tmp
+data/*.bak
+data/ownership/
+data/briefings/
+data/usd_idr_rate.json
+
+# --- Logs & OS ---
 *.log
 .DS_Store
-.env
-.env.backup
-.env.production
-.phpactor.json
-.phpunit.result.cache
-/.codex
-/.cursor/
-/.idea
-/.nova
-/.phpunit.cache
-/.vscode
-/.zed
-/auth.json
-/node_modules
-/public/build
-/public/fonts-manifest.dev.json
-/public/hot
-/public/storage
-/storage/*.key
-/storage/pail
-/vendor
-_ide_helper.php
-Homestead.json
-Homestead.yaml
 Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Project Specific ---
+.claude/
+.deprecated/
+CLAUDE.md
