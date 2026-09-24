@@ -153,7 +153,8 @@ async def get_signals(
 
 
 @app.get("/api/stock/{ticker}", tags=["Market Data"])
-async def get_stock_data(ticker: str, limit: int = 120):
+async def get_stock_data(ticker: str, limit: int = 0):
+    import math
     import numpy as np
     import pandas as pd
 
@@ -166,7 +167,8 @@ async def get_stock_data(ticker: str, limit: int = 120):
     df = df.sort_values("Date").reset_index(drop=True)
 
     tech = compute_technical_indicators(df, ticker=ticker)
-    if limit and len(tech) > limit:
+    
+    if limit > 0 and len(tech) > limit:
         tech = tech.tail(limit).reset_index(drop=True)
 
     # Standardize time and OHLC fields for charts
@@ -189,18 +191,28 @@ async def get_stock_data(ticker: str, limit: int = 120):
     tech["close"] = tech["Close"]
     tech["volume"] = tech["Volume"].fillna(0) if "Volume" in tech.columns else 0
 
-    # Clean NaNs and infs for strict JSON compliance
-    clean_df = tech.replace([np.inf, -np.inf], np.nan).where(pd.notnull(tech), None)
-    clean_df["Date"] = clean_df["Date"].astype(str)
+    # Ubah ke list of dicts terlebih dahulu
+    raw_records = tech.to_dict(orient="records")
+    clean_records = []
+    
+    # Pembersihan NaN manual yang 100% lolos verifikasi JSON
+    for row in raw_records:
+        clean_row = {}
+        for key, value in row.items():
+            if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+                clean_row[key] = None
+            else:
+                clean_row[key] = value
+        clean_row["Date"] = str(clean_row["Date"])
+        clean_records.append(clean_row)
 
-    records = clean_df.to_dict(orient="records")
-    latest = records[-1] if records else {}
+    latest = clean_records[-1] if clean_records else {}
+    
     return {
         "ticker": ticker,
-        "records": records,
+        "records": clean_records,
         "latest": latest,
     }
-
 
 @app.get("/api/stock/{ticker}/blocks", tags=["Market Data"])
 async def get_stock_blocks(ticker: str):

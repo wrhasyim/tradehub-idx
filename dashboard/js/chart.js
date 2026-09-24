@@ -15,17 +15,61 @@ function setTimeframe(tf) {
     if (activeBtn) {
         activeBtn.classList.add('active');
         activeBtn.style.background = 'var(--accent-blue)';
-        activeBtn.style.color = '#000'; // Menyesuaikan dengan tema hitam Tradehub
+        activeBtn.style.color = '#000'; // Menyesuaikan tema Tradehub
         activeBtn.style.fontWeight = 'bold';
-    }
-
-    // Persiapan hook untuk data Intraday / Ivezgo
-    if (['1m', '5m', '15m', '1h'].includes(tf)) {
-        console.log(`[Ivezgo Ready] Meminta data intraday untuk timeframe: ${tf}`);
     }
 
     // Panggil ulang chart setiap kali timeframe diganti
     loadStockChart();
+}
+
+// Fungsi helper dengan deteksi spesifik (membedakan '1M' Month dan '1m' minute)
+function aggregateOHLCV(dailyData, tf) {
+    const isWeekly = tf === '1W' || tf === '1w';
+    const isMonthly = tf === '1M' || tf === '1Mo' || tf === '1mo';
+    
+    if (!isWeekly && !isMonthly) return dailyData;
+    
+    const aggregated = [];
+    let currentPeriod = null;
+    let currentCandle = null;
+
+    dailyData.forEach(candle => {
+        let periodKey;
+        
+        if (isWeekly) {
+            const d = new Date(candle.time);
+            const day = d.getDay() || 7; 
+            d.setDate(d.getDate() - day + 1);
+            periodKey = d.toISOString().split('T')[0];
+        } else if (isMonthly) {
+            const parts = candle.time.split('-');
+            periodKey = `${parts[0]}-${parts[1]}-01`;
+        }
+
+        if (currentPeriod !== periodKey) {
+            if (currentCandle) aggregated.push(currentCandle);
+            currentPeriod = periodKey;
+            currentCandle = {
+                time: periodKey,
+                open: candle.open,
+                high: candle.high,
+                low: candle.low,
+                close: candle.close,
+                volume: candle.volume,
+                color: candle.color
+            };
+        } else {
+            currentCandle.high = Math.max(currentCandle.high, candle.high);
+            currentCandle.low = Math.min(currentCandle.low, candle.low);
+            currentCandle.close = candle.close;
+            currentCandle.volume += candle.volume;
+            currentCandle.color = currentCandle.close >= currentCandle.open ? 'rgba(16, 185, 129, 0.5)' : 'rgba(239, 68, 68, 0.5)';
+        }
+    });
+    
+    if (currentCandle) aggregated.push(currentCandle);
+    return aggregated;
 }
 
 async function loadStockChart() {
@@ -44,7 +88,6 @@ async function loadStockChart() {
         const nameEl = document.getElementById('chartStockName');
         if (nameEl) nameEl.innerText = comp.name || ticker;
 
-        // Render Tato / Notasi Khusus BEI di sebelah nama saham
         const annoEl = document.getElementById('chartAnnotations');
         if (annoEl) {
             annoEl.innerHTML = '';
@@ -71,14 +114,40 @@ async function loadStockChart() {
     }
     container.innerHTML = '';
 
+    const tfExact = currentTimeframe;
+
+    // BLOKIR SEMENTARA UNTUK INTRADAY (Gunakan deteksi Array spesifik, bukan toLowerCase)
+    if (['1m', '5m', '15m', '1h', '1H'].includes(tfExact)) {
+        alert(`Data Intraday (${tfExact}) belum tersedia. Menunggu integrasi API Ivezgo aktif.`);
+        container.innerHTML = `<div style="display:flex; justify-content:center; align-items:center; height:100%; color:var(--text-secondary); font-weight:600; font-size:1.1rem;"><i class="fa-solid fa-clock-rotate-left" style="margin-right:8px;"></i> Data Intraday menunggu koneksi API Ivezgo</div>`;
+        return; 
+    }
+
+    // PERBAIKAN VISUAL SMC & VOLUME
     const tvChart = LightweightCharts.createChart(container, {
         width: container.clientWidth || 800,
         height: 480,
-        layout: { background: { color: '#070a13' }, textColor: '#9ca3af' },
-        grid: { vertLines: { color: 'rgba(255, 255, 255, 0.05)' }, horzLines: { color: 'rgba(255, 255, 255, 0.05)' } },
+        layout: { 
+            background: { color: '#070a13' }, 
+            textColor: '#9ca3af' 
+        },
+        grid: { 
+            vertLines: { color: 'rgba(255, 255, 255, 0.03)' }, 
+            horzLines: { color: 'rgba(255, 255, 255, 0.03)' } 
+        },
         crosshair: { mode: 0 },
-        rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
-        timeScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
+        rightPriceScale: { 
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            autoScale: true,
+            scaleMargins: {
+                top: 0.1,    
+                bottom: 0.25 
+            }
+        },
+        timeScale: { 
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            timeVisible: true,
+        },
     });
 
     window.activeChartInstance = tvChart;
@@ -90,8 +159,14 @@ async function loadStockChart() {
     });
 
     const volumeSeries = tvChart.addHistogramSeries({
-        color: '#3b82f6', priceFormat: { type: 'volume' },
-        priceScaleId: '', scaleMargins: { top: 0.8, bottom: 0 },
+        priceFormat: { type: 'volume' },
+        priceScaleId: '', 
+    });
+
+    // Kunci volume di 15% layar terbawah
+    tvChart.priceScale('').applyOptions({
+        scaleMargins: { top: 0.85, bottom: 0 },
+        visible: false, 
     });
 
     window.activeCandleSeries = candleSeries;
@@ -99,40 +174,47 @@ async function loadStockChart() {
     try {
         container.style.opacity = '0.5';
 
-        // ==============================================================
-        // LOGIKA PENARIKAN DATA BERDASARKAN TIMEFRAME & BYPASS LIMIT
-        // ==============================================================
-        let fetchUrl = `/api/stock/${ticker}`;
-        
-        if (['1m', '5m', '15m', '1h'].includes(currentTimeframe)) {
-            // Jika masuk timeframe intraday
-            fetchUrl = `/api/stock/${ticker}?limit=390`; 
-        } else if (currentTimeframe === '1d') {
-            // JIKA DAILY (1D): Gunakan 99999 agar Python tidak menganggapnya kosong (falsy)
-            fetchUrl = `/api/stock/${ticker}?limit=99999`;
-        } else {
-            // JIKA WEEKLY/MONTHLY: Tarik semua data
-            fetchUrl = `/api/stock/${ticker}?limit=99999&tf=${currentTimeframe}`;
-        }
+        // Selalu tarik full data (limit=0) dari Parquet untuk 1D, 1W, dan 1Mo
+        const fetchUrl = `/api/stock/${ticker}?limit=0`; 
 
-        // Fetch data menggunakan URL yang sudah dimodifikasi
         const response = await fetch(fetchUrl);
         if (!response.ok) throw new Error(`Data tidak ditemukan (Status: ${response.status})`);
         const dbData = await response.json();
 
         if (dbData.records && dbData.records.length > 0) {
-            const candleData = dbData.records.map(r => ({
-                time: r.time, open: r.open, high: r.high, low: r.low, close: r.close
-            }));
-            const volData = dbData.records.map(r => ({
-                time: r.time, value: r.volume || 0,
-                color: r.close >= r.open ? 'rgba(16, 185, 129, 0.5)' : 'rgba(239, 68, 68, 0.5)'
-            }));
+            
+            const rawCandleData = [];
+            
+            // SANITASI OHLC 0 DARI BEI
+            dbData.records.forEach(r => {
+                let o = r.open, h = r.high, l = r.low, c = r.close;
+                if (c === null || c === undefined || c <= 0) return;
+
+                if (!o || o <= 0) o = c;
+                if (!h || h <= 0) h = c;
+                if (!l || l <= 0) l = c;
+
+                h = Math.max(o, h, c);
+                l = Math.min(o, l, c);
+
+                rawCandleData.push({ 
+                    time: r.time, open: o, high: h, low: l, close: c,
+                    volume: r.volume || 0,
+                    color: c >= o ? 'rgba(16, 185, 129, 0.5)' : 'rgba(239, 68, 68, 0.5)'
+                });
+            });
+
+            // TERAPKAN AGREGASI JIKA 1W ATAU 1Mo
+            const processedData = aggregateOHLCV(rawCandleData, tfExact);
+
+            // Pisahkan kembali array OHLC dan array Volume untuk Lightweight Charts
+            const candleData = processedData.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
+            const volData = processedData.map(d => ({ time: d.time, value: d.volume, color: d.color }));
 
             candleSeries.setData(candleData);
             volumeSeries.setData(volData);
 
-            // SINKRONISASI WIDGET TECHNICAL INDICATORS
+            // SINKRONISASI WIDGET TECHNICAL INDICATORS (Tetap dari data base daily)
             const closes = dbData.records.map(r => r.close);
             const volumes = dbData.records.map(r => r.volume || 0);
             
@@ -142,9 +224,9 @@ async function loadStockChart() {
             };
 
             const latest = dbData.latest || {};
-            const rsi = latest.RSI || 50; 
-            const ema20 = latest.EMA_20 || calcSMA(closes, 20);
-            const ema50 = latest.EMA_50 || calcSMA(closes, 50);
+            const rsi = latest.RSI14 || latest.RSI || 50; 
+            const ema20 = latest.EMA_20 || latest.EMA20 || calcSMA(closes, 20);
+            const ema50 = latest.EMA_50 || latest.EMA50 || calcSMA(closes, 50);
             const trend = ema20 > ema50 ? 'BULLISH' : 'BEARISH';
             
             const vol20 = calcSMA(volumes, 20);
@@ -201,24 +283,27 @@ async function loadStockChart() {
                 }
             } catch (blockErr) {}
 
-            const markers = [];
-            const sortedDates = candleData.map(c => c.time);
-            const lastPrice = candleData[candleData.length - 1].close;
-            let dps = (comp && comp.dps) || 0;
-            
-            if (dps > 0 && sortedDates.length >= 25) {
-                let yld = ((dps / lastPrice) * 100).toFixed(1);
-                markers.push({
-                    time: sortedDates[Math.floor(sortedDates.length * 0.45)],
-                    position: 'belowBar', color: '#10b981', shape: 'arrowUp',
-                    text: `Cum Date: DPS Rp ${dps.toLocaleString()} (${yld}%)`,
-                });
-                markers.push({
-                    time: sortedDates[Math.floor(sortedDates.length * 0.45) + 1],
-                    position: 'aboveBar', color: '#ef4444', shape: 'arrowDown',
-                    text: `Ex Date: Theo Drop -Rp ${dps.toLocaleString()}`,
-                });
-                candleSeries.setMarkers(markers.sort((a, b) => (a.time > b.time ? 1 : -1)));
+            // HANYA RENDER MARKER JIKA DI TIMEFRAME DAILY (1D)
+            if (tfExact === '1d' || tfExact === '1D') {
+                const markers = [];
+                const sortedDates = candleData.map(c => c.time);
+                const lastPrice = candleData[candleData.length - 1].close;
+                let dps = (comp && comp.dps) || 0;
+                
+                if (dps > 0 && sortedDates.length >= 25) {
+                    let yld = ((dps / lastPrice) * 100).toFixed(1);
+                    markers.push({
+                        time: sortedDates[Math.floor(sortedDates.length * 0.45)],
+                        position: 'belowBar', color: '#10b981', shape: 'arrowUp',
+                        text: `Cum Date: DPS Rp ${dps.toLocaleString()} (${yld}%)`,
+                    });
+                    markers.push({
+                        time: sortedDates[Math.floor(sortedDates.length * 0.45) + 1],
+                        position: 'aboveBar', color: '#ef4444', shape: 'arrowDown',
+                        text: `Ex Date: Theo Drop -Rp ${dps.toLocaleString()}`,
+                    });
+                    candleSeries.setMarkers(markers.sort((a, b) => (a.time > b.time ? 1 : -1)));
+                }
             }
         }
     } catch (error) {
